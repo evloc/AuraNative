@@ -1,0 +1,70 @@
+# Builds AURA Native on a Windows machine and publishes it as a GitHub Release.
+#
+# To release:   git tag v0.1.0   then   git push origin v0.1.0
+# (Or: GitHub -> Actions -> "Release AURA Native" -> Run workflow, for a test build
+#  that is uploaded as an artifact but not published.)
+
+name: Release AURA Native
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Work out the version
+        shell: pwsh
+        run: |
+          $v = if ($env:GITHUB_REF_TYPE -eq "tag") { $env:GITHUB_REF_NAME.TrimStart("v", "V") } else { "0.0.0" }
+          if ($v -notmatch '^\d+\.\d+\.\d+$') { $v = "0.0.0" }
+          "AURA_VERSION=$v" | Out-File -FilePath $env:GITHUB_ENV -Append
+          Write-Host "Building AURA Native $v"
+
+      - name: Build
+        shell: pwsh
+        run: |
+          dotnet build AuraNative.csproj -c Release -nologo "-p:Version=$env:AURA_VERSION"
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Self-test
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath "bin\Release\AURA Native.exe" -ArgumentList "--selftest" -Wait -PassThru
+          Get-Content "$env:APPDATA\AURA Native\selftest.txt"
+          if ($p.ExitCode -ne 0) { exit 1 }
+
+      - name: Build the installer and a no-install copy
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "C:\Program Files (x86)\Inno Setup 6\ISCC.exe")) { choco install innosetup -y --no-progress }
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DAppVersion=$env:AURA_VERSION" installer.iss
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          Compress-Archive -Path "bin\Release\AURA Native.exe","bin\Release\AURA Native.exe.config" -DestinationPath "dist\AURA-Native-portable.zip"
+
+      - name: Keep the files from a test run
+        if: github.ref_type != 'tag'
+        uses: actions/upload-artifact@v4
+        with:
+          name: AURA-Native-${{ env.AURA_VERSION }}
+          path: |
+            dist/AURA-Native-Setup.exe
+            dist/AURA-Native-portable.zip
+
+      - name: Publish the release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          name: AURA Native ${{ env.AURA_VERSION }}
+          generate_release_notes: true
+          files: |
+            dist/AURA-Native-Setup.exe
+            dist/AURA-Native-portable.zip
