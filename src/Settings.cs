@@ -27,6 +27,8 @@ namespace Aura
         [DataMember] public bool Imported;            // folders, playlists and favorites brought over from AURA
         [DataMember] public string SongsSort = "added";
         [DataMember] public bool SongsDesc = true;
+        [DataMember] public bool AutoLyrics = true;      // look online by itself for songs without lyrics
+        [DataMember] public bool CheckUpdates = true;
 
         public static string Dir;
         static string FilePath => System.IO.Path.Combine(Dir, "settings.json");

@@ -6,7 +6,7 @@ namespace Aura
 {
     sealed class Route
     {
-        public string Kind;        // home, songs, artists, albums, album, artist, playlist, favorites, queue, search, settings
+        public string Kind;        // home, songs, artists, albums, album, artist, playlist, favorites, queue, search, settings, now
         public string Key = "";    // album/artist key, search text
         public long Id;            // playlist id
         public float Scroll;       // remembered when going back
@@ -19,6 +19,9 @@ namespace Aura
         Library Lib { get; }
         Player Player { get; }
         Settings Prefs { get; }
+        LyricsStore Lyrics { get; }
+        void FullScreenLyrics();
+        void FindLyrics(Track t);
         void Go(Route r);
         void Back();
         void Forward();

@@ -13,6 +13,8 @@ namespace Aura
         public Library Lib { get; }
         public Player Player { get; }
         public Settings Prefs { get; }
+        public LyricsStore Lyrics { get; }
+        FullLyricsForm full;
 
         internal readonly Sidebar Side;
         internal readonly PlayerBar Bar;
@@ -29,6 +31,14 @@ namespace Aura
         public MainForm(Library lib, Player player, Settings prefs)
         {
             Lib = lib; Player = player; Prefs = prefs;
+            Lyrics = new LyricsStore(lib);
+            Lyrics.Changed += id =>
+            {
+                if (Page is NowPlayingPage np && Player.Current?.Id == id) np.Reload();
+                if (Page is SettingsPage sp) sp.Invalidate();
+            };
+            Lyrics.AutoProgress += () => { if (Page is SettingsPage sp) sp.Invalidate(); };
+            Updater.Changed += () => { Head.Invalidate(); if (Page is SettingsPage sp) sp.Invalidate(); };
             Text = App.Name;
             BackColor = Theme.Side;
             ForeColor = Theme.Text;
@@ -185,6 +195,8 @@ namespace Aura
                 case Keys.Control | Keys.Left: Player.Prev(); return true;
                 case Keys.Control | Keys.Up: Player.Volume += 5; Bar.Invalidate(); return true;
                 case Keys.Control | Keys.Down: Player.Volume -= 5; Bar.Invalidate(); return true;
+                case Keys.F11: FullScreenLyrics(); return true;
+                case Keys.Control | Keys.L: if (Current?.Kind == "now") Back(); else Go(new Route("now")); return true;
                 case Keys.Alt | Keys.Left: Back(); return true;
                 case Keys.Alt | Keys.Right: Forward(); return true;
                 case Keys.Space: if (!typing) { Player.Toggle(); return true; } break;
@@ -238,6 +250,7 @@ namespace Aura
             switch (r.Kind)
             {
                 case "home": page = new HomePage(this); break;
+                case "now": page = new NowPlayingPage(this); break;
                 case "artists": case "albums": page = new GridPage(this, r); break;
                 case "settings":
                     {
@@ -290,6 +303,31 @@ namespace Aura
         }
 
         // ---------- now playing ----------
+        public void FullScreenLyrics()
+        {
+            if (full != null && !full.IsDisposed) { full.Close(); return; }
+            full = new FullLyricsForm(this, Screen.FromControl(this));
+            full.FormClosed += (s, e) => { full = null; Activate(); };
+            full.Show(this);
+        }
+
+        public void FindLyrics(Track t)
+        {
+            if (t == null) return;
+            using (var f = new LyricsFinder(this, t)) f.ShowDialog(this);
+        }
+
+        public void InstallUpdate()
+        {
+            if (!Updater.Available) return;
+            if (MessageBox.Show(this, "Install AURA Native " + Updater.Latest + " now? AURA will close for a moment and open again by itself.", "Update AURA", MessageBoxButtons.OKCancel, MessageBoxIcon.Information) != DialogResult.OK) return;
+            Updater.Install(file =>
+            {
+                try { SaveState(); Updater.RunInstaller(file); Close(); }
+                catch (Exception e) { Toast("Couldn't start the update: " + e.Message); }
+            }, err => Toast("The update didn't download: " + err));
+        }
+
         void OnTrackChanged()
         {
             var t = Player.Current;
@@ -401,6 +439,7 @@ namespace Aura
                 if (s.Added > 0 && !firstScan) Toast(s.Added == 1 ? "Found 1 new song" : "Found " + s.Added.ToString("N0") + " new songs");
                 if (firstScan) { firstScan = false; AfterFirstScan(); }
                 if (rescanAfter) { rescanAfter = false; rescanTimer.Start(); }
+                Lyrics.Nudge();
             });
             Watch();
             Side.Invalidate(); Head.Invalidate(); Page?.Invalidate();
@@ -439,6 +478,13 @@ namespace Aura
             OnTrackChanged();
             if (Prefs.Folders.Count > 0) Rescan();
             else { firstScan = false; AfterFirstScan(); }
+            Lyrics.StartAuto(() => Prefs.AutoLyrics);
+            if (Prefs.CheckUpdates && Environment.GetEnvironmentVariable("AURA_NO_UPDATE_CHECK") == null)
+            {
+                var once = new Timer { Interval = 6000 };
+                once.Tick += (s, e) => { once.Stop(); once.Dispose(); Updater.Check(false); };
+                once.Start();
+            }
         }
 
         void AfterFirstScan()

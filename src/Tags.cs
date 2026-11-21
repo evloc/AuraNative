@@ -11,6 +11,11 @@ namespace Aura
         public double Duration;
         public byte[] Picture;          // only filled when asked for
         public bool HasPicture;
+        // lyrics, as the first AURA (and most taggers) store them
+        public string LyricsText = "";                         // plain lyrics, or LRC text
+        public List<(double t, string text)> Synced;           // ID3 SYLT (timed lines)
+        public string WordsRaw = "";                           // AURA_WORDS: word timings as enhanced LRC
+        public bool HasLyrics => LyricsText.Trim().Length > 0 || (Synced != null && Synced.Count > 0);
     }
 
     // Reads tags, cover and length straight from the file: MP3 (ID3v2/ID3v1), FLAC, Ogg Vorbis/Opus,
@@ -219,6 +224,46 @@ namespace Aura
                         case "TLEN":
                             if (t.Duration <= 0 && double.TryParse(Id3Text(fb, o, n), out double ms) && ms > 0) t.Duration = ms / 1000.0;
                             break;
+                        case "USLT":
+                        case "ULT":
+                            {
+                                if (n < 5) break;
+                                int enc = fb[o], q = SkipZ(fb, o + 4, o + n, enc);     // language, then a description
+                                if (q < o + n && t.LyricsText.Length == 0) t.LyricsText = Decode(fb, q, o + n - q, enc).Replace("\0", "").Trim();
+                                break;
+                            }
+                        case "SYLT":
+                            {
+                                if (n < 7 || t.Synced != null) break;
+                                int enc = fb[o], fmt = fb[o + 4], end = o + n;
+                                int q = SkipZ(fb, o + 6, end, enc);                    // description
+                                var lines = new List<(double, string)>();
+                                int zl = (enc == 1 || enc == 2) ? 2 : 1;
+                                while (q < end)
+                                {
+                                    int z = SkipZ(fb, q, end, enc);
+                                    if (z + 4 > end) break;
+                                    int tl = z - q - zl;
+                                    string text = tl > 0 ? Decode(fb, q, tl, enc) : "";
+                                    long stamp = UBE32(fb, z);
+                                    if (fmt == 2) lines.Add((stamp / 1000.0, text.Replace("\r", "").Trim('\n', ' ', '\0')));
+                                    q = z + 4;
+                                }
+                                if (lines.Count > 0) { lines.Sort((a, b2) => a.Item1.CompareTo(b2.Item1)); t.Synced = lines; }
+                                break;
+                            }
+                        case "TXXX":
+                        case "TXX":
+                            {
+                                if (n < 2) break;
+                                int enc = fb[o], zl = (enc == 1 || enc == 2) ? 2 : 1;
+                                int q = SkipZ(fb, o + 1, o + n, enc);
+                                string desc = Decode(fb, o + 1, Math.Max(0, q - (o + 1) - zl), enc).Trim('\0', ' ');
+                                string val = q < o + n ? Decode(fb, q, o + n - q, enc).Trim('\0', ' ') : "";
+                                if (desc.Equals("AURA_WORDS", StringComparison.OrdinalIgnoreCase)) t.WordsRaw = val;
+                                else if ((desc.Equals("LYRICS", StringComparison.OrdinalIgnoreCase) || desc.Equals("UNSYNCEDLYRICS", StringComparison.OrdinalIgnoreCase)) && t.LyricsText.Length == 0) t.LyricsText = val;
+                                break;
+                            }
                         case "APIC":
                         case "PIC":
                             {
@@ -386,6 +431,10 @@ namespace Aura
                             case "DATE": case "YEAR": Set(ref t.Year, val); break;
                             case "GENRE": Set(ref t.Genre, val); break;
                             case "TRACKNUMBER": Set(ref t.Track, val); break;
+                            case "LYRICS": case "UNSYNCEDLYRICS": case "SYNCEDLYRICS": case "UNSYNCED LYRICS":
+                                if (t.LyricsText.Length == 0 || (key == "SYNCEDLYRICS" && !Lrc.IsTimed(t.LyricsText))) t.LyricsText = val.Trim();
+                                break;
+                            case "AURA_WORDS": t.WordsRaw = val.Trim(); break;
                         }
                     }
                 }
@@ -563,6 +612,23 @@ namespace Aura
         static void IlstItem(Stream f, string type, long start, long end, TagInfo t, bool wantPic)
         {
             long p = start;
+            if (type == "----")
+            {
+                // freeform item: mean ("com.apple.iTunes"), name ("AURA_WORDS"), data
+                string name = "";
+                while (p + 12 <= end)
+                {
+                    f.Position = p;
+                    var h = ReadN(f, 8);
+                    long size = UBE32(h, 0);
+                    if (size < 12 || p + size > end || size > 4 * 1024 * 1024) return;
+                    string kind = Latin1(h, 4, 4);
+                    if (kind == "name") { var b = ReadN(f, size - 8); if (b.Length > 4) name = Encoding.UTF8.GetString(b, 4, b.Length - 4); }
+                    else if (kind == "data" && size >= 16 && name == "AURA_WORDS") { ReadN(f, 8); t.WordsRaw = Encoding.UTF8.GetString(ReadN(f, size - 16)).Trim(); }
+                    p += size;
+                }
+                return;
+            }
             while (p + 16 <= end)
             {
                 f.Position = p;
@@ -594,6 +660,7 @@ namespace Aura
                                 case "aART": Set(ref t.AlbumArtist, s); break;
                                 case "©day": Set(ref t.Year, s); break;
                                 case "©gen": Set(ref t.Genre, s); break;
+                                case "©lyr": if (t.LyricsText.Length == 0) t.LyricsText = s.Trim(); break;
                             }
                         }
                     }

@@ -46,3 +46,5 @@ Name: "{autodesktop}\AURA Native"; Filename: "{app}\AURA Native.exe"; Tasks: des
 
 [Run]
 Filename: "{app}\AURA Native.exe"; Description: "Open AURA Native"; Flags: nowait postinstall skipifsilent
+; after a self-update (a silent install), open AURA again
+Filename: "{app}\AURA Native.exe"; Flags: nowait; Check: WizardSilent

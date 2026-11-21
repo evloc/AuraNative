@@ -35,7 +35,7 @@ namespace Aura
             var img = Art.Get(t);
             if (img != null) Theme.Image(g, img, ar, Theme.F(8));
             else Theme.NoArt(g, ar, Theme.F(8), t?.Id ?? 3);
-            if (t != null) AddHit("art", ar, () => { if (t.Album.Length > 0) shell.Go(new Route("album", t.AlbumKey)); }, t.Album.Length > 0 ? "Go to the album" : null);
+            if (t != null) AddHit("art", ar, () => { if (shell.Current?.Kind == "now") shell.Back(); else shell.Go(new Route("now")); }, "Now playing and lyrics (Ctrl+L)");
             float leftW = Math.Min(Theme.F(330), Width * 0.3f);
             float tx = x + art + Theme.F(14), tw = leftW - (tx - x) - Theme.F(40);
             if (t != null)
@@ -57,13 +57,15 @@ namespace Aura
             Slider(g, "vol", vr, P.Volume / 100f, k => { P.Volume = (int)Math.Round(k * 100); muteFrom = -1; Invalidate(); }, null);
             var volIcon = P.Volume == 0 ? "mute" : P.Volume < 50 ? "volume1" : "volume";
             IconButton(g, "mute", new RectangleF(rx - Theme.F(40), h / 2 - Theme.F(16), Theme.F(32), Theme.F(32)), volIcon, ToggleMute, P.Volume == 0 ? "Unmute" : "Mute");
+            IconButton(g, "lyrics", new RectangleF(rx - Theme.F(120), h / 2 - Theme.F(16), Theme.F(32), Theme.F(32)), "mic",
+                () => { if (shell.Current?.Kind == "now") shell.Back(); else shell.Go(new Route("now")); }, "Lyrics (Ctrl+L)", shell.Current?.Kind == "now");
             IconButton(g, "queue", new RectangleF(rx - Theme.F(80), h / 2 - Theme.F(16), Theme.F(32), Theme.F(32)), "queue",
                 () => { if (shell.Current?.Kind == "queue") shell.Back(); else shell.Go(new Route("queue")); }, "Up next", shell.Current?.Kind == "queue");
 
             // ---- middle: buttons and seek bar
             float cx = Width / 2f;
             float midW = Math.Min(Theme.F(620), Width - leftW * 2 - Theme.F(40));
-            midW = Math.Max(Theme.F(260), Math.Min(midW, (rx - Theme.F(90)) - (x + leftW) - Theme.F(24)));
+            midW = Math.Max(Theme.F(260), Math.Min(midW, (rx - Theme.F(130)) - (x + leftW) - Theme.F(24)));
             cx = Math.Max(cx, x + leftW + Theme.F(12) + midW / 2);
             float by = Theme.F(12), bs = Theme.F(34);
             PlayButton(g, "play", new RectangleF(cx - Theme.F(20), by - Theme.F(2), Theme.F(40), Theme.F(40)), P.IsPlaying, P.Toggle, P.IsPlaying ? "Pause (Space)" : "Play (Space)");

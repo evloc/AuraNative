@@ -16,14 +16,14 @@ namespace Aura
         public SettingsPage(IShell shell) { this.shell = shell; }
         public void Reload() => Invalidate();
 
-        float Card(Graphics g, float y, float h, string title, string sub)
+        float Card(Graphics g, float y, float h, string title, string sub, float subH = 40)
         {
             float pad = Theme.F(28);
             var r = new RectangleF(pad, y, Math.Min(Width - pad * 2, Theme.F(820)), h);
             Theme.Fill(g, Theme.Surface, r, Theme.F(14));
             Theme.Stroke(g, Theme.Alpha(Color.White, 14), r, Theme.F(14));
             Theme.Write(g, title, Theme.Font(17, FontStyle.Bold), Theme.Text, new RectangleF(r.X + Theme.F(22), r.Y + Theme.F(18), r.Width - Theme.F(44), Theme.F(26)));
-            if (sub != null) Theme.Write(g, sub, Theme.Font(13), Theme.Sub, new RectangleF(r.X + Theme.F(22), r.Y + Theme.F(46), r.Width - Theme.F(44), Theme.F(40)), Theme.Wrap);
+            if (sub != null) Theme.Write(g, sub, Theme.Font(13), Theme.Sub, new RectangleF(r.X + Theme.F(22), r.Y + Theme.F(46), r.Width - Theme.F(44), Theme.F(subH)), Theme.Wrap);
             return r.X + Theme.F(22);
         }
 
@@ -89,6 +89,30 @@ namespace Aura
                 sx += Theme.F(36);
             }
             Theme.Write(g, shell.Prefs.CoverColors ? "Used when a song has no cover." : "", Theme.Font(12.5f), Theme.Faint, new RectangleF(x, ly + Theme.F(34), cw, Theme.F(22)));
+            y += h + Theme.F(20);
+
+            // ---- lyrics
+            h = Theme.F(226);
+            x = Card(g, y, h, "Lyrics", "Lyrics already in your songs, or in a .lrc file next to them, show up by themselves. For songs without any, AURA looks on LRCLIB and Genius and only keeps a match when the title and artist both agree. Found lyrics are saved in AURA — your music files aren't changed.", 60);
+            float lyy = y + Theme.F(128);
+            Toggle(g, "auto", x, lyy, cw - Theme.F(44), "Look for lyrics by itself", shell.Prefs.AutoLyrics, () => { shell.Prefs.AutoLyrics = !shell.Prefs.AutoLyrics; shell.Prefs.Save(); shell.Lyrics.Nudge(); Invalidate(); });
+            var au = shell.Lyrics.Auto;
+            int without = shell.Lyrics.Without().Count;
+            string ls = au.Offline ? "Couldn't reach the lyric sites — AURA will try again later."
+                : au.Running ? "Looking… " + au.Current + (au.Found > 0 ? "  ·  found " + au.Found + " so far" : "")
+                : without == 0 ? "Every song has lyrics."
+                : Theme.Count(without, "song") + " without lyrics" + (au.Found > 0 ? "  ·  found " + au.Found + " this time" : "");
+            Theme.Write(g, ls, Theme.Font(13), Theme.Faint, new RectangleF(x, lyy + Theme.F(38), cw - Theme.F(260), Theme.F(24)));
+            if (without > 0) Pill(g, "again", x + cw - Theme.F(44) - Theme.F(220), lyy + Theme.F(32), "Look again for all", () => { shell.Lyrics.TryAllAgain(); shell.Toast("Looking again for songs without lyrics"); Invalidate(); }, false, "refresh", 34);
+            y += h + Theme.F(20);
+
+            // ---- updates
+            h = Theme.F(150);
+            x = Card(g, y, h, "Updates", "AURA Native checks GitHub for a new version when it opens, and puts an Update button at the top when there is one.");
+            float uy = y + Theme.F(96);
+            float ub = Pill(g, "chk", x, uy, Updater.Checking ? "Checking…" : "Check now", () => Updater.Check(true), false, "refresh", 34).Right + Theme.F(10);
+            if (Updater.Available && !Updater.Downloading) ub = Pill(g, "upd", ub, uy, "Update to " + Updater.Latest, () => (FindForm() as MainForm)?.InstallUpdate(), true, "download", 34).Right + Theme.F(10);
+            Theme.Write(g, Updater.Status, Theme.Font(13), Theme.Faint, new RectangleF(ub + Theme.F(6), uy, cw - (ub - x) - Theme.F(50), Theme.F(34)));
             y += h + Theme.F(20);
 
             // ---- from the first AURA

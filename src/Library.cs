@@ -13,7 +13,7 @@ namespace Aura
         public int TrackNo;
         public double Duration, Added, Mtime, LastPlayed;
         public long Size;
-        public bool HasArt, Fav;
+        public bool HasArt, Fav, HasLyrics;
         public int Plays;
 
         public string Name => Title.Length > 0 ? Title : System.IO.Path.GetFileNameWithoutExtension(Path);
@@ -77,7 +77,7 @@ namespace Aura
         public event Action ScanProgress;
         SynchronizationContext ui;
 
-        static double Now => (DateTime.UtcNow - new DateTime(1970, 1, 1)).TotalSeconds;
+        public static double Now => (DateTime.UtcNow - new DateTime(1970, 1, 1)).TotalSeconds;
 
         const string Schema = @"
 CREATE TABLE IF NOT EXISTS tracks (
@@ -97,6 +97,12 @@ CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT)";
         {
             Db = new Db(dbPath);
             Db.Script(Schema);
+            // newer columns; songs are read again once to fill them in
+            if (!Db.Rows("PRAGMA table_info(tracks)").Any(r => Conv.S(r[1]) == "has_lyrics"))
+            {
+                Db.Exec("ALTER TABLE tracks ADD COLUMN has_lyrics INTEGER DEFAULT 0");
+                Db.Exec("UPDATE tracks SET mtime=0");
+            }
             ui = SynchronizationContext.Current;
         }
 
@@ -115,14 +121,14 @@ CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT)";
         {
             var tracks = new List<Track>();
             var by = new Dictionary<long, Track>();
-            foreach (var r in Db.Rows("SELECT id,path,size,mtime,title,artist,album,albumartist,year,genre,track_no,duration,has_art,added FROM tracks WHERE missing=0"))
+            foreach (var r in Db.Rows("SELECT id,path,size,mtime,title,artist,album,albumartist,year,genre,track_no,duration,has_art,added,has_lyrics FROM tracks WHERE missing=0"))
             {
                 var t = new Track
                 {
                     Id = Conv.L(r[0]), Path = Conv.S(r[1]), Size = Conv.L(r[2]), Mtime = Conv.D(r[3]),
                     Title = Conv.S(r[4]), Artist = Conv.S(r[5]), Album = Conv.S(r[6]), AlbumArtist = Conv.S(r[7]),
                     Year = Conv.S(r[8]), Genre = Conv.S(r[9]), TrackNo = (int)Conv.L(r[10]), Duration = Conv.D(r[11]),
-                    HasArt = Conv.L(r[12]) != 0, Added = Conv.D(r[13])
+                    HasArt = Conv.L(r[12]) != 0, Added = Conv.D(r[13]), HasLyrics = Conv.L(r[14]) != 0
                 };
                 tracks.Add(t); by[t.Id] = t;
             }
@@ -248,19 +254,20 @@ CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT)";
                     var t = Tags.Read(path);
                     Scan.Read++;
                     int trackNo = int.TryParse(t.Track, out int tn) ? tn : 0;
+                    bool hasLyr = t.HasLyrics || LyricsStore.Sidecar(path) != null;
                     if (known.TryGetValue(path, out k))
                     {
                         var id = k.id;
-                        pending.Add(() => Db.Exec("UPDATE tracks SET size=?,mtime=?,title=?,artist=?,album=?,albumartist=?,year=?,genre=?,track_no=?,duration=?,has_art=?,missing=0 WHERE id=?",
-                            size, mtime, t.Title, t.Artist, t.Album, t.AlbumArtist, t.Year, t.Genre, trackNo, t.Duration, t.HasPicture, id));
+                        pending.Add(() => Db.Exec("UPDATE tracks SET size=?,mtime=?,title=?,artist=?,album=?,albumartist=?,year=?,genre=?,track_no=?,duration=?,has_art=?,has_lyrics=?,missing=0 WHERE id=?",
+                            size, mtime, t.Title, t.Artist, t.Album, t.AlbumArtist, t.Year, t.Genre, trackNo, t.Duration, t.HasPicture, hasLyr, id));
                         if (k.missing) Scan.Added++;
                     }
                     else
                     {
                         Scan.Added++;
                         double added = Math.Min(Now, mtime > 0 ? mtime : Now);
-                        pending.Add(() => Db.Exec("INSERT OR IGNORE INTO tracks (path,size,mtime,title,artist,album,albumartist,year,genre,track_no,duration,has_art,added) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                            path, size, mtime, t.Title, t.Artist, t.Album, t.AlbumArtist, t.Year, t.Genre, trackNo, t.Duration, t.HasPicture, added));
+                        pending.Add(() => Db.Exec("INSERT OR IGNORE INTO tracks (path,size,mtime,title,artist,album,albumartist,year,genre,track_no,duration,has_art,added,has_lyrics) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                            path, size, mtime, t.Title, t.Artist, t.Album, t.AlbumArtist, t.Year, t.Genre, trackNo, t.Duration, t.HasPicture, added, hasLyr));
                     }
                     if (pending.Count >= 200) Flush();
                     if (Now - lastUi > 0.25) { lastUi = Now; OnUi(() => ScanProgress?.Invoke()); }

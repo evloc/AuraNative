@@ -108,7 +108,7 @@ namespace Aura
         }
 
         // ---------- hits ----------
-        protected Hit AddHit(string id, RectangleF r, Action click = null, string tip = null, bool fixedPos = false)
+        protected internal Hit AddHit(string id, RectangleF r, Action click = null, string tip = null, bool fixedPos = false)
         {
             var h = new Hit { Id = id, R = r, Click = click, Tip = tip, Fixed = fixedPos, Cursor = click != null ? Cursors.Hand : null };
             hits.Add(h);
@@ -116,6 +116,7 @@ namespace Aura
         }
 
         protected bool Hover(string id) => HoverId == id;
+        public bool HoverIdIs(string id) => HoverId == id;
         protected bool HoverStarts(string prefix) => HoverId != null && HoverId.StartsWith(prefix);
 
         Hit HitAt(Point p)

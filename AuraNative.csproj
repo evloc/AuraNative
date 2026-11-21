@@ -13,10 +13,11 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <PlatformTarget>AnyCPU</PlatformTarget>
     <Prefer32Bit>false</Prefer32Bit>
-    <Version>0.1.0</Version>
+    <Version>0.2.0</Version>
     <Product>AURA Native</Product>
     <Company>AURA</Company>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <NoWarn>CS0649</NoWarn>
     <DebugType>none</DebugType>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
   </PropertyGroup>

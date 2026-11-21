@@ -118,6 +118,7 @@ namespace Aura
         public static readonly StringFormat Right = new StringFormat(StringFormatFlags.NoWrap) { Trimming = StringTrimming.EllipsisCharacter, LineAlignment = StringAlignment.Center, Alignment = StringAlignment.Far };
         public static readonly StringFormat Center = new StringFormat(StringFormatFlags.NoWrap) { Trimming = StringTrimming.EllipsisCharacter, LineAlignment = StringAlignment.Center, Alignment = StringAlignment.Center };
         public static readonly StringFormat Wrap = new StringFormat { Trimming = StringTrimming.EllipsisWord };
+        public static readonly StringFormat TopLeft = new StringFormat(StringFormat.GenericTypographic) { FormatFlags = StringFormatFlags.NoWrap | StringFormatFlags.NoClip | StringFormatFlags.MeasureTrailingSpaces };
 
         public static void Setup(Graphics g)
         {
@@ -366,6 +367,21 @@ namespace Aura
                         g.DrawEllipse(pen, 3, 3, 18, 18);
                         g.DrawEllipse(pen, 7.5f, 7.5f, 9, 9);
                         g.FillEllipse(br, 10.3f, 10.3f, 3.4f, 3.4f);
+                        break;
+                    case "mic":
+                        using (var p = Theme.Round(new RectangleF(8.5f, 3, 7, 11.5f), 3.5f)) { if (filled) g.FillPath(br, p); g.DrawPath(pen, p); }
+                        g.DrawArc(pen, 5, 6.5f, 14, 11, 0, 180);
+                        g.DrawLine(pen, 12, 17.5f, 12, 21); g.DrawLine(pen, 8.5f, 21, 15.5f, 21);
+                        break;
+                    case "expand":
+                        g.DrawLines(pen, new[] { new PointF(4, 9), new PointF(4, 4), new PointF(9, 4) });
+                        g.DrawLines(pen, new[] { new PointF(15, 4), new PointF(20, 4), new PointF(20, 9) });
+                        g.DrawLines(pen, new[] { new PointF(20, 15), new PointF(20, 20), new PointF(15, 20) });
+                        g.DrawLines(pen, new[] { new PointF(9, 20), new PointF(4, 20), new PointF(4, 15) });
+                        break;
+                    case "download":
+                        g.DrawLine(pen, 12, 4, 12, 15); g.DrawLines(pen, new[] { new PointF(7.5f, 10.5f), new PointF(12, 15), new PointF(16.5f, 10.5f) });
+                        g.DrawLine(pen, 5, 19.5f, 19, 19.5f);
                         break;
                     case "trash":
                         g.DrawLine(pen, 4, 6.5f, 20, 6.5f);

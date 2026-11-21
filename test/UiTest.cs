@@ -46,6 +46,7 @@ namespace Aura
             TestAudio.Speed = 1;
             if (script == "main") MainScript();
             else if (script == "resume") Resume();
+            else if (script == "lyrics") LyricsScript();
             int i = 0; DateTime started = DateTime.Now; bool begun = false;
             var t = new Timer { Interval = 150 };
             t.Tick += (s, e) =>
@@ -61,7 +62,7 @@ namespace Aura
                 bool done;
                 try { done = steps[i].act(); }
                 catch (Exception ex) { Console.WriteLine("FAIL step '" + steps[i].name + "' threw " + ex); fails++; done = true; }
-                if (done || (DateTime.Now - started).TotalSeconds > 25)
+                if (done || (DateTime.Now - started).TotalSeconds > 60)
                 {
                     if (!done) { Console.WriteLine("FAIL step timed out: " + steps[i].name); fails++; }
                     i++; begun = false;
@@ -260,6 +261,130 @@ namespace Aura
                 Ok(Theme.Accent.ToArgb() != Theme.AccentBase.ToArgb() && Theme.Accent.G > Theme.Accent.R, "the color follows a teal cover (" + ColorTranslator.ToHtml(Theme.Accent) + ")");
                 File.WriteAllText(Path.Combine(outDir, "resume.txt"), P.Current.Id + " " + P.Position.ToString(System.Globalization.CultureInfo.InvariantCulture));
                 Shot("13_now");
+                return true;
+            });
+        }
+
+        static Track T(string name) => L.Tracks.First(t => t.Name == name);
+        static Form floating;
+
+        static void ShotForm(Form f, string name)
+        {
+            try
+            {
+                f.Refresh();
+                using (var b = new Bitmap(f.Width, f.Height))
+                {
+                    using (var g = Graphics.FromImage(b)) g.CopyFromScreen(f.Location, Point.Empty, b.Size);
+                    b.Save(Path.Combine(outDir, name + ".png"), ImageFormat.Png);
+                }
+            }
+            catch (Exception e) { Console.WriteLine("shot failed " + e.Message); }
+        }
+
+        static void LyricsScript()
+        {
+            Step("scan finishes", () => !L.Scan.Running && L.Tracks.Count > 0 && F.Prefs.Imported);
+            Step("lyrics in files", () =>
+            {
+                var r = F.Lyrics.Get(T("Robbery"));
+                Ok(r != null && r.ByWord && r.Lines.Count == 6 && r.Source == "In the song file", "lyrics in the song file are read, word by word (" + r?.Source + ")");
+                Ok(T("Robbery").HasLyrics, "the library knows Robbery has lyrics");
+                var n = F.Lyrics.Get(T("Night Drive"));
+                Ok(n != null && n.Timed && n.Lines[0].Text == "night drive sidecar line", "a .lrc file next to the song is used (" + n?.Source + ")");
+                Ok(F.Lyrics.Get(T("Hear Me Calling")) == null, "a song with no lyrics has none");
+                return true;
+            });
+            Step("auto lyrics", () => F.Lyrics.Auto.Done >= 6 && !F.Lyrics.Auto.Running);
+            Step("auto results", () =>
+            {
+                var a = F.Lyrics.Get(T("Lucid Dreams"));
+                Ok(a != null && a.Timed && a.Lines[0].Text == "found line one" && a.FromAura, "same-length LRCLIB match saved with timings");
+                var w = F.Lyrics.Get(T("Wasted"));
+                Ok(w != null && !w.Timed && w.Plain.StartsWith("wasted words only"), "different length: words only");
+                var e = F.Lyrics.Get(T("Empty"));
+                Ok(e != null && e.Plain == "Empty words from Genius here\nsecond & final line", "Genius used when LRCLIB has nothing (" + (e?.Plain ?? "null").Replace("\n", "/") + ")");
+                Ok(F.Lyrics.Get(T("All Girls Are the Same")) == null, "a different artist is not saved");
+                Ok(F.Lyrics.Get(T("Hear Me Calling")) == null, "nothing found: nothing saved");
+                return true;
+            });
+            Step("play Robbery", () => { var t = T("Robbery"); P.PlayList(new[] { t.Id }.ToList()); F.Go(new Route("now")); return true; });
+            Step("mid-word", () => { if (P.Position < 0.2) return false; P.Seek(1.75); return true; });
+            Step("now playing shot", () =>
+            {
+                if (!Pause(5)) return false;
+                Ok(F.Page is NowPlayingPage, "Now Playing opens");
+                Shot("20_now_byword");
+                return true;
+            });
+            Step("click a line seeks", () => { P.Seek(8.4); return true; });
+            Step("later line shot", () => { if (!Pause(12)) return false; Shot("21_now_later"); return true; });
+            Step("full screen", () => { F.FullScreenLyrics(); P.Seek(4.6); return true; });
+            Step("full screen shot", () =>
+            {
+                if (!Pause(14)) return false;
+                var full = Application.OpenForms.OfType<FullLyricsForm>().FirstOrDefault();
+                Ok(full != null && full.Visible, "full-screen lyrics opens");
+                if (full != null) ShotForm(full, "22_fullscreen");
+                F.FullScreenLyrics();     // second press closes it
+                return true;
+            });
+            Step("full screen closed", () =>
+            {
+                if (!Pause(4)) return false;
+                Ok(!Application.OpenForms.OfType<FullLyricsForm>().Any(), "F11 again closes it");
+                return true;
+            });
+            Step("song without lyrics", () => { P.PlayList(new[] { T("Hear Me Calling").Id }.ToList()); return true; });
+            Step("no lyrics shot", () => { if (!Pause(8)) return false; Shot("23_now_none"); return true; });
+            Step("plain lyrics shot", () => { P.PlayList(new[] { T("Empty").Id }.ToList()); return true; });
+            Step("plain shot", () => { if (!Pause(8)) return false; Shot("24_now_plain"); return true; });
+            Step("finder", () =>
+            {
+                var f = new LyricsFinder(F, T("Lucid Dreams")); floating = f; f.Show(F); return true;
+            });
+            Step("finder results", () =>
+            {
+                var f = (LyricsFinder)floating;
+                if (f.TestCount == 0) return false;
+                if (!Pause(4)) return false;
+                Ok(f.TestCount == 1 && f.TestPreview.StartsWith("found line one"), "finder lists results; the same song at two lengths shows once, the closest length (" + f.TestCount + ")");
+                ShotForm(f, "25_finder");
+                f.TestPick(0);
+                return true;
+            });
+            Step("finder use", () =>
+            {
+                var f = (LyricsFinder)floating;
+                if (!Pause(3)) return false;
+                f.TestUse();
+                var l = F.Lyrics.Get(T("Lucid Dreams"));
+                Ok(l != null && l.Lines[0].Text == "found line one" && l.Source == "Found on LRCLIB" && Conv.L(L.Db.Scalar("SELECT picked FROM found_lyrics WHERE track_id=?", T("Lucid Dreams").Id)) == 1, "picking lyrics in the finder saves them as your pick");
+                return true;
+            });
+            Step("remove", () =>
+            {
+                F.Lyrics.Remove(T("Wasted"));
+                Ok(F.Lyrics.Get(T("Wasted")) == null, "Remove takes found lyrics away");
+                Ok(Conv.L(L.Db.Scalar("SELECT COUNT(*) FROM lyrics_tried WHERE track_id=?", T("Wasted").Id)) == 1, "and AURA won't look for them again by itself");
+                return true;
+            });
+            Step("update check", () => { Updater.Check(true); return true; });
+            Step("update found", () =>
+            {
+                if (Updater.Checking) return false;
+                Ok(Updater.Available && Updater.Latest == "0.2.0", "a newer version on GitHub is noticed (" + Updater.Status + ")");
+                F.Go(new Route("settings"));
+                return true;
+            });
+            Step("update shot", () => { if (!Pause(6)) return false; Shot("26_settings_update"); ((Canvas)F.Page).ScrollTo(560, false); return true; });
+            Step("settings lower shot", () => { if (!Pause(6)) return false; Shot("27_settings_lyrics"); return true; });
+            string got = null;
+            Step("update download", () => { Updater.Install(file => got = file, err => got = "ERR " + err); return true; });
+            Step("update downloaded", () =>
+            {
+                if (got == null) return false;
+                Ok(got != null && File.Exists(got) && new FileInfo(got).Length > 300000, "the installer downloads (" + got + ")");
                 return true;
             });
         }

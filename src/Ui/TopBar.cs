@@ -74,9 +74,17 @@ namespace Aura
             if (Search.Text.Length > 0)
                 IconButton(g, "clear", new RectangleF(box.Right - Theme.F(34), box.Y + Theme.F(6), Theme.F(28), Theme.F(28)), "close", () => { Search.Text = ""; Search.Focus(); }, "Clear");
 
-            // scanning / count on the right
+            // an update, or scanning, on the right
             var scan = shell.Lib.Scan;
-            if (scan.Running)
+            if (Updater.Available || Updater.Downloading)
+            {
+                string label = Updater.Downloading ? (Updater.Percent >= 0 ? "Updating… " + Updater.Percent + "%" : "Updating…") : "Update to " + Updater.Latest;
+                var f = Theme.Font(13.5f, FontStyle.Regular, true);
+                float uw = Theme.Measure(g, label, f) + Theme.F(36) + Theme.F(26);
+                Pill(g, "update", Width - Theme.F(28) - uw, y, label, Updater.Downloading ? (Action)null : () => (FindForm() as MainForm)?.InstallUpdate(), true, "download", 36,
+                    Updater.Downloading ? null : "A new version of AURA Native is ready");
+            }
+            else if (scan.Running)
             {
                 string msg = "Scanning your music… " + scan.Seen.ToString("N0") + " files";
                 Theme.Write(g, msg, Theme.Font(12.5f), Theme.Sub, new RectangleF(box.Right + Theme.F(16), 0, Width - box.Right - Theme.F(36), Height), Theme.Right);

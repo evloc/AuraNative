@@ -14,6 +14,7 @@ namespace Aura
         {
 #if TESTHOOKS
             if (args.Length > 0 && args[0] == "--tagdump") return TagDump.Run(args.Skip(1).ToArray());
+            if (args.Length > 0 && args[0] == "--lyricsdump") return TagDump.Lyrics(args.Skip(1).ToArray());
 #endif
             string data = Arg(args, "--data");
             bool test = args.Contains("--test-audio");
