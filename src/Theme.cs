@@ -79,6 +79,9 @@ namespace Aura
             anim.Start();
         }
 
+        // where the accent is heading (it glides there over a moment)
+        public static Color AccentTarget => step >= 0 ? to : Accent;
+
         public static Color Mix(Color a, Color b, float k) =>
             Color.FromArgb((int)(a.A + (b.A - a.A) * k), (int)(a.R + (b.R - a.R) * k), (int)(a.G + (b.G - a.G) * k), (int)(a.B + (b.B - a.B) * k));
         public static Color Alpha(Color c, int a) => Color.FromArgb(Math.Max(0, Math.Min(255, a)), c.R, c.G, c.B);
@@ -188,9 +191,54 @@ namespace Aura
             using (var pen = new Pen(c, w)) using (var p = Round(r, rad)) g.DrawPath(pen, p);
         }
 
+        // covers are scaled and rounded once per size, then just copied to the screen (much smoother scrolling)
+        static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Image, Dictionary<(int, int, int, bool), Bitmap>> scaled =
+            new System.Runtime.CompilerServices.ConditionalWeakTable<Image, Dictionary<(int, int, int, bool), Bitmap>>();
+
         public static void Image(Graphics g, Image img, RectangleF r, float rad, bool circle = false)
         {
-            if (img == null) return;
+            if (img == null || r.Width < 1 || r.Height < 1) return;
+            int w = (int)Math.Round(r.Width), h = (int)Math.Round(r.Height), rr = (int)Math.Round(rad);
+            Bitmap b = null;
+            if (w <= 1600 && h <= 1600)
+            {
+                var d = scaled.GetOrCreateValue(img);
+                lock (d)
+                {
+                    var key = (w, h, rr, circle);
+                    if (!d.TryGetValue(key, out b))
+                    {
+                        if (d.Count >= 6) { foreach (var x in d.Values) x.Dispose(); d.Clear(); }
+                        b = new Bitmap(w, h, System.Drawing.Imaging.PixelFormat.Format32bppPArgb);
+                        using (var bg = Graphics.FromImage(b))
+                        {
+                            bg.SmoothingMode = SmoothingMode.AntiAlias;
+                            bg.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                            bg.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                            using (var src = new Bitmap(w, h, System.Drawing.Imaging.PixelFormat.Format32bppPArgb))
+                            {
+                                using (var sg = Graphics.FromImage(src))
+                                {
+                                    sg.InterpolationMode = InterpolationMode.HighQualityBicubic; sg.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                                    using (var ia = new System.Drawing.Imaging.ImageAttributes()) { ia.SetWrapMode(WrapMode.TileFlipXY); sg.DrawImage(img, new Rectangle(0, 0, w, h), 0, 0, img.Width, img.Height, GraphicsUnit.Pixel, ia); }
+                                }
+                                using (var tb = new TextureBrush(src))
+                                using (var p = circle ? Ellipse(new RectangleF(0, 0, w, h)) : Round(new RectangleF(0, 0, w, h), rr))
+                                    bg.FillPath(tb, p);
+                            }
+                        }
+                        d[key] = b;
+                    }
+                }
+            }
+            if (b != null)
+            {
+                var im = g.InterpolationMode; var pm = g.PixelOffsetMode;
+                g.InterpolationMode = InterpolationMode.Bilinear; g.PixelOffsetMode = PixelOffsetMode.Half;
+                g.DrawImage(b, new RectangleF(r.X, r.Y, w, h));
+                g.InterpolationMode = im; g.PixelOffsetMode = pm;
+                return;
+            }
             var state = g.Save();
             using (var p = circle ? Ellipse(r) : Round(r, rad))
             {

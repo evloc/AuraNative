@@ -111,7 +111,7 @@ namespace Aura
             IconButton(g, "close", new RectangleF(Width - Theme.F(34), Theme.F(6), Theme.F(26), Theme.F(26)), "close", shell.ToggleMini, "Close the mini player");
             // where you are in the song
             double dur = P.Duration;
-            float k = seekDrag >= 0 ? seekDrag : dur > 0 ? (float)(P.Position / dur) : 0;
+            float k = seekDrag >= 0 ? seekDrag : dur > 0 ? (float)(P.SmoothPosition / dur) : 0;
             var sr = new RectangleF(0, Height - Theme.F(5), Width, Theme.F(5));
             Theme.Fill(g, Theme.Alpha(Theme.Text, 30), sr, 0);
             Theme.Fill(g, Theme.Accent, new RectangleF(0, sr.Y, Width * Math.Max(0, Math.Min(1, k)), sr.Height), 0);

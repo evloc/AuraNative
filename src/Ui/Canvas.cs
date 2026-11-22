@@ -35,6 +35,8 @@ namespace Aura
         readonly ToolTip tip = new ToolTip { InitialDelay = 500, ReshowDelay = 200, AutoPopDelay = 6000 };
         string tipShown;
         protected bool Scrollable = true;
+        readonly System.Diagnostics.Stopwatch scrollClock = System.Diagnostics.Stopwatch.StartNew();
+        double lastScroll;
 
         protected Canvas()
         {
@@ -43,14 +45,19 @@ namespace Aura
             DoubleBuffered = true;
             BackColor = Theme.Bg;
             ForeColor = Theme.Text;
-            smooth = new Timer { Interval = 15 };
+            smooth = new Timer { Interval = 10 };
             smooth.Tick += (s, e) =>
             {
+                // eased by time, not by ticks, so it glides the same however fast the timer fires
+                double now = scrollClock.Elapsed.TotalSeconds;
+                float dt = (float)Math.Max(0.004, Math.Min(0.05, now - lastScroll));
+                lastScroll = now;
                 float d = target - Offset;
                 if (Math.Abs(d) < 0.6f) { Offset = target; smooth.Stop(); }
-                else Offset += d * 0.32f;
+                else Offset += d * FrameClock.Ease(dt, 16);
                 OnScrolled();
                 Invalidate();
+                Update();
             };
         }
 
@@ -67,7 +74,7 @@ namespace Aura
         public void ScrollTo(float y, bool animate = true)
         {
             target = Math.Max(0, Math.Min(MaxOffset, y));
-            if (animate) smooth.Start(); else { Offset = target; smooth.Stop(); OnScrolled(); Invalidate(); }
+            if (animate) { if (!smooth.Enabled) lastScroll = scrollClock.Elapsed.TotalSeconds - 0.016; smooth.Start(); } else { Offset = target; smooth.Stop(); OnScrolled(); Invalidate(); }
         }
 
         public void EnsureVisible(float top, float bottom, float topMargin = 0)

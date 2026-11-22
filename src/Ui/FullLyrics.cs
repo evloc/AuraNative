@@ -1,14 +1,15 @@
 using System;
-using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Windows.Forms;
 
 namespace Aura
 {
-    // Full-screen lyrics over a slow, starry space scene colored by the cover.
+    // Full-screen lyrics in deep space, colored by the cover and moving with the music.
     sealed class FullLyricsForm : Form
     {
+        public static int Open;            // while it's up, pages behind it stop animating
+        readonly StageView view;
         public FullLyricsForm(IShell shell, Screen screen)
         {
             FormBorderStyle = FormBorderStyle.None;
@@ -18,7 +19,7 @@ namespace Aura
             ShowInTaskbar = false;
             KeyPreview = true;
             Text = "AURA lyrics";
-            var view = new StageView(shell, this) { Dock = DockStyle.Fill };
+            view = new StageView(shell, this) { Dock = DockStyle.Fill };
             Controls.Add(view);
             KeyDown += (s, e) =>
             {
@@ -30,11 +31,15 @@ namespace Aura
                     case Keys.Right: shell.Player.Seek(shell.Player.Position + 5); break;
                     case Keys.Up: shell.Player.Volume += 5; break;
                     case Keys.Down: shell.Player.Volume -= 5; break;
+                    case Keys.N: shell.Player.Next(); break;
+                    case Keys.P: shell.Player.Prev(); break;
                     default: return;
                 }
+                view.Poke();
                 e.Handled = true;
             };
-            FormClosed += (s, e) => view.Dispose();
+            Open++;
+            FormClosed += (s, e) => { Open--; view.Dispose(); };
         }
 
         protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
@@ -49,121 +54,173 @@ namespace Aura
         readonly IShell shell;
         readonly Form owner;
         readonly LyricsPane pane = new LyricsPane { Stage = true };
-        readonly Timer tick = new Timer { Interval = 33 };
-        readonly List<(float x, float y, float r, float phase, float speed)> stars = new List<(float, float, float, float, float)>();
-        Bitmap nebula; int nebulaFor; Size nebulaSize;
-        DateTime lastMove = DateTime.Now, lastFrame = DateTime.Now;
+        readonly Space space = new Space();
+        readonly FrameClock frames;
+        DateTime lastMove = DateTime.Now;
         Track shown;
-        float drift;
+        float ui = 1, intro = 0, songFade = 1;     // eased 0..1: the buttons, the first fade from black, a new song coming in
+        bool cursorHidden;
+        int frame;
 
         public StageView(IShell shell, Form owner)
         {
             this.shell = shell; this.owner = owner;
             Scrollable = false;
             BackColor = Color.Black;
-            var rnd = new Random(7);
-            for (int i = 0; i < 170; i++) stars.Add(((float)rnd.NextDouble(), (float)rnd.NextDouble(), 0.5f + (float)Math.Pow(rnd.NextDouble(), 3) * 2.2f, (float)(rnd.NextDouble() * Math.PI * 2), 0.3f + (float)rnd.NextDouble()));
-            tick.Tick += (s, e) =>
-            {
-                tick.Interval = shell.Player.IsPlaying ? 33 : 90;
-                Invalidate();
-            };
-            tick.Start();
+            frames = new FrameClock(this, () => Visible);
+            frames.Frame += () => frame++;
         }
 
-        protected override void Dispose(bool disposing) { if (disposing) { tick.Dispose(); nebula?.Dispose(); } base.Dispose(disposing); }
+        public void Poke() { lastMove = DateTime.Now; ShowCursor(); }
 
-        protected override void OnMouseMove(MouseEventArgs e) { base.OnMouseMove(e); lastMove = DateTime.Now; }
-        protected override void OnMouseDoubleClick(MouseEventArgs e) { base.OnMouseDoubleClick(e); owner.Close(); }
-        protected override void OnMouseWheel(MouseEventArgs e) { lastMove = DateTime.Now; pane.Wheel(e.Delta, Height * 0.7f); }
-
-        Bitmap Nebula()
+        protected override void Dispose(bool disposing)
         {
-            int key = Theme.Accent.ToArgb();
-            if (nebula != null && nebulaFor == key && nebulaSize == Size) return nebula;
-            nebula?.Dispose();
-            int w = Math.Max(1, Width / 4), h = Math.Max(1, Height / 4);
-            nebula = new Bitmap(w, h);
-            using (var g = Graphics.FromImage(nebula))
-            {
-                g.SmoothingMode = SmoothingMode.AntiAlias;
-                using (var b = new LinearGradientBrush(new Rectangle(0, 0, w, h), Color.FromArgb(4, 5, 14), Color.FromArgb(10, 6, 22), 70f)) g.FillRectangle(b, 0, 0, w, h);
-                var c1 = Theme.Accent;
-                var c2 = Theme.FromHsl(c1.GetHue() + 50, 0.7f, 0.45f);
-                var c3 = Theme.FromHsl(c1.GetHue() - 40, 0.6f, 0.35f);
-                void Blob(float cx, float cy, float rx, float ry, Color c, int a)
-                {
-                    using (var p = new GraphicsPath())
-                    {
-                        p.AddEllipse(cx - rx, cy - ry, rx * 2, ry * 2);
-                        using (var pb = new PathGradientBrush(p) { CenterColor = Color.FromArgb(a, c), SurroundColors = new[] { Color.FromArgb(0, c) } })
-                            g.FillPath(pb, p);
-                    }
-                }
-                Blob(w * 0.25f, h * 0.3f, w * 0.45f, h * 0.55f, c1, 120);
-                Blob(w * 0.8f, h * 0.7f, w * 0.5f, h * 0.6f, c2, 95);
-                Blob(w * 0.55f, h * 0.15f, w * 0.35f, h * 0.35f, c3, 70);
-            }
-            nebulaFor = key; nebulaSize = Size;
-            return nebula;
+            if (disposing) { frames.Dispose(); space.Dispose(); pane.Dispose(); ShowCursor(); }
+            base.Dispose(disposing);
         }
+
+        void ShowCursor() { if (cursorHidden) { Cursor.Show(); cursorHidden = false; } }
+
+        protected override void OnMouseMove(MouseEventArgs e) { base.OnMouseMove(e); if (e.Location != lastPoint) { lastPoint = e.Location; Poke(); } }
+        Point lastPoint;
+        protected override void OnMouseDoubleClick(MouseEventArgs e) { base.OnMouseDoubleClick(e); owner.Close(); }
+        protected override void OnMouseWheel(MouseEventArgs e) { Poke(); pane.Wheel(e.Delta, Height * 0.7f); }
+
+        // how loud the song is right now, from what AURA learned by listening to it (-1 when it hasn't yet)
+        float Loudness(Track t, double pos)
+        {
+            var s = shell.Sound.Get(t);
+            if (s == null || s.Env.Length == 0) return -1;
+            int i = (int)(pos * SongSound.Fps);
+            if (i < 0 || i >= s.Env.Length) return 0;
+            int m = 0; for (int j = Math.Max(0, i - 2); j <= Math.Min(s.Env.Length - 1, i + 2); j++) m = Math.Max(m, s.Env[j]);
+            return Math.Max(0, Math.Min(1, (m - 150) / 100f));
+        }
+
+        internal static double DrawMs; internal static int Drawn;      // how long a frame takes to draw (for tests)
+        readonly System.Diagnostics.Stopwatch drawWatch = new System.Diagnostics.Stopwatch();
 
         protected override void Draw(Graphics g, RectangleF view)
         {
-            var now = DateTime.Now;
-            float dt = (float)Math.Min(0.1, (now - lastFrame).TotalSeconds);
-            lastFrame = now;
-            if (shell.Player.IsPlaying) drift += dt;
-            var t = shell.Player.Current;
-            if (t != shown) { shown = t; pane.Set(t == null ? null : shell.Lyrics.Get(t), t?.Id ?? -1); }
+            drawWatch.Restart();
+            try { DrawStage(g); }
+            finally
+            {
+                DrawMs = DrawMs * 0.9 + drawWatch.Elapsed.TotalMilliseconds * 0.1; Drawn++;
+#if TESTHOOKS
+                if (Drawn % 60 == 0 && Environment.GetEnvironmentVariable("AURA_TEST_TRACE") != null) Console.WriteLine("    frame " + Drawn + ": " + DrawMs.ToString("0.0") + " ms, now " + drawWatch.Elapsed.TotalMilliseconds.ToString("0.0"));
+#endif
+            }
+        }
+
+        void DrawStage(Graphics g)
+        {
+            float dt = frames.Dt;
+            var P = shell.Player;
+            var t = P.Current;
+            double pos = P.SmoothPosition;
+            if (t != shown)
+            {
+                if (shown != null && t != null) space.Warp();
+                shown = t; songFade = 0;
+                pane.Set(t == null ? null : shell.Lyrics.Get(t), t?.Id ?? -1);
+                if (t != null) shell.Sound.Want(t);
+            }
+            songFade += (1 - songFade) * FrameClock.Ease(dt, 3.5f);
+            intro += (1 - intro) * FrameClock.Ease(dt, 2.5f);
+            bool showUi = (DateTime.Now - lastMove).TotalSeconds < 2.5;
+            ui += ((showUi ? 1 : 0) - ui) * FrameClock.Ease(dt, showUi ? 10 : 3);
+            if (!showUi && !cursorHidden && App.IsWindows && Form.ActiveForm == owner) { Cursor.Hide(); cursorHidden = true; }
 
             // space
-            g.InterpolationMode = InterpolationMode.HighQualityBilinear;
-            g.DrawImage(Nebula(), new Rectangle(0, 0, Width, Height));
-            g.InterpolationMode = InterpolationMode.HighQualityBicubic;
-            float time = (float)(now - DateTime.Today).TotalSeconds;
-            foreach (var s in stars)
+            space.Prepare(Size, Theme.AccentTarget);
+            space.Draw(g, new Rectangle(0, 0, Width, Height), dt, frames.Now, t == null ? -1 : Loudness(t, pos), P.IsPlaying);
+
+            if (t == null)
             {
-                float x = ((s.x - drift * 0.004f * s.speed) % 1 + 1) % 1 * Width;
-                float y = s.y * Height;
-                float tw = 0.55f + 0.45f * (float)Math.Sin(time * 1.3f * s.speed + s.phase);
-                float r = Theme.F(s.r);
-                using (var b = new SolidBrush(Color.FromArgb((int)(60 + 170 * tw), 235, 240, 255))) g.FillEllipse(b, x - r / 2, y - r / 2, r, r);
+                Theme.Write(g, "Nothing playing", Theme.Font(30, FontStyle.Bold), Theme.Alpha(Color.White, 220), new RectangleF(0, 0, Width, Height), Theme.Center);
+                Intro(g); return;
             }
 
-            bool showUi = (now - lastMove).TotalSeconds < 3;
-            Cursor = showUi ? Cursors.Default : Cursors.Default;
+            float pad = Theme.F(44);
+            var area = new RectangleF(Width * 0.09f, Height * 0.06f, Width * 0.82f, Height * 0.72f);
+            if (pane.Lyrics == null) DrawCoverCenter(g, t);
+            else
+            {
+                pane.Glow = Theme.Mix(Theme.Accent, Color.White, 0.35f);
+                pane.Duration = P.Duration;
+                pane.Fade = songFade;
+                pane.Draw(g, area, pos, this, sec => { P.Seek(sec); Poke(); }, "st");
+            }
 
-            if (t == null) { Theme.Write(g, "Nothing playing", Theme.Font(30, FontStyle.Bold), Theme.Text, new RectangleF(0, 0, Width, Height), Theme.Center); return; }
-
-            // lyrics in the middle
-            var area = new RectangleF(Width * 0.1f, Height * 0.07f, Width * 0.8f, Height * 0.72f);
-            if (pane.Lyrics == null)
-                Theme.Write(g, "No lyrics for this song yet", Theme.Font(30, FontStyle.Bold), Theme.Alpha(Color.White, 200), area, Theme.Center);
-            else pane.Draw(g, area, shell.Player.Position, this, sec => shell.Player.Seek(sec), "st");
-
-            // the song, bottom left
-            float pad = Theme.F(40), art = Theme.F(84);
-            var ar = new RectangleF(pad, Height - pad - art, art, art);
+            // the song, bottom left, with a soft glow behind the cover
+            float art = Theme.F(86);
+            var ar = new RectangleF(pad, Height - pad - art - Theme.F(10), art, art);
+            space.GlowAt(g, RectangleF.Inflate(ar, art * 0.7f, art * 0.7f), 0.45f + space.Energy * 0.4f);
             var img = Art.Get(t);
-            if (img != null) Theme.Image(g, img, ar, Theme.F(10)); else Theme.NoArt(g, ar, Theme.F(10), t.Id);
-            Theme.Write(g, t.Name, Theme.Font(22, FontStyle.Bold), Color.White, new RectangleF(ar.Right + Theme.F(18), ar.Y + Theme.F(12), Width * 0.45f, Theme.F(32)));
-            Theme.Write(g, t.ArtistName + (t.Album.Length > 0 ? "  ·  " + t.Album : ""), Theme.Font(15), Theme.Alpha(Color.White, 170), new RectangleF(ar.Right + Theme.F(18), ar.Y + Theme.F(46), Width * 0.45f, Theme.F(24)));
+            if (img != null) Theme.Image(g, img, ar, Theme.F(12)); else Theme.NoArt(g, ar, Theme.F(12), t.Id);
+            int ta = (int)(255 * songFade);
+            Theme.Write(g, t.Name, Theme.Font(23, FontStyle.Bold), Color.FromArgb(ta, 255, 255, 255), new RectangleF(ar.Right + Theme.F(20), ar.Y + Theme.F(10), Width * 0.42f, Theme.F(34)));
+            Theme.Write(g, t.ArtistName + (t.Album.Length > 0 ? "  ·  " + t.Album : ""), Theme.Font(15), Color.FromArgb((int)(ta * 0.7f), 255, 255, 255), new RectangleF(ar.Right + Theme.F(20), ar.Y + Theme.F(46), Width * 0.42f, Theme.F(24)));
+            var snd = shell.Sound.Get(t);
+            if (snd != null && snd.Bpm > 0)
+                Theme.Write(g, snd.Bpm.ToString("0") + " BPM" + (snd.Key.Length > 0 ? "  ·  " + snd.Key : ""), Theme.Font(12.5f), Color.FromArgb((int)(ta * 0.45f), 255, 255, 255), new RectangleF(ar.Right + Theme.F(20), ar.Y + Theme.F(72), Width * 0.42f, Theme.F(20)));
 
-            // how far through the song
-            double d = shell.Player.Duration, p = shell.Player.Position;
-            float k = d > 0 ? (float)Math.Min(1, p / d) : 0;
-            Theme.Fill(g, Theme.Alpha(Color.White, 30), new RectangleF(0, Height - Theme.F(3), Width, Theme.F(3)), 0);
-            Theme.Fill(g, Theme.Alpha(Theme.Mix(Theme.Accent, Color.White, 0.3f), 220), new RectangleF(0, Height - Theme.F(3), Width * k, Theme.F(3)), 0);
-
-            if (showUi)
+            // how far through the song: a thin line with a glowing head
+            double d = P.Duration;
+            float k = d > 0 ? (float)Math.Max(0, Math.Min(1, pos / d)) : 0;
+            float by = Height - Theme.F(4);
+            Theme.Fill(g, Theme.Alpha(Color.White, 26), new RectangleF(0, by, Width, Theme.F(4)), 0);
+            using (var b = new LinearGradientBrush(new RectangleF(0, by, Math.Max(2, Width * k), Theme.F(4)), Theme.Alpha(Theme.Accent, 160), Theme.Mix(Theme.Accent, Color.White, 0.5f), 0f))
+                g.FillRectangle(b, 0, by, Width * k, Theme.F(4));
+            using (var p = new GraphicsPath())
             {
-                float cx = Width / 2f, cy = Height - pad - Theme.F(30);
-                PlayButton(g, "play", new RectangleF(cx - Theme.F(28), cy - Theme.F(28), Theme.F(56), Theme.F(56)), shell.Player.IsPlaying, shell.Player.Toggle, shell.Player.IsPlaying ? "Pause (Space)" : "Play (Space)");
-                IconButton(g, "prev", new RectangleF(cx - Theme.F(90), cy - Theme.F(22), Theme.F(44), Theme.F(44)), "prev", shell.Player.Prev, "Previous", circleBg: true);
-                IconButton(g, "next", new RectangleF(cx + Theme.F(46), cy - Theme.F(22), Theme.F(44), Theme.F(44)), "next", shell.Player.Next, "Next", circleBg: true);
-                IconButton(g, "close", new RectangleF(Width - pad - Theme.F(44), pad - Theme.F(10), Theme.F(44), Theme.F(44)), "close", owner.Close, "Close (Esc)", circleBg: true);
+                float hx = Width * k, hr = Theme.F(16);
+                p.AddEllipse(hx - hr, by + Theme.F(2) - hr, hr * 2, hr * 2);
+                using (var pb = new PathGradientBrush(p) { CenterColor = Theme.Alpha(Color.White, 200), SurroundColors = new[] { Color.FromArgb(0, Theme.Accent) } })
+                    g.FillPath(pb, p);
             }
+
+            // buttons fade in when the mouse moves
+            if (ui > 0.02f)
+            {
+                int ua = (int)(255 * ui);
+                float cx = Width / 2f, cy = Height - pad - Theme.F(34);
+                Theme.Write(g, Theme.Time(pos) + "  /  " + Theme.Time(d), Theme.Font(13), Color.FromArgb((int)(ua * 0.7f), 255, 255, 255), new RectangleF(Width - pad - Theme.F(300), Height - pad - Theme.F(30), Theme.F(300), Theme.F(24)), Theme.Right);
+                // they slide away off the edges when the mouse rests
+                var st = g.Save();
+                g.TranslateTransform(0, (1 - ui) * Theme.F(140));
+                PlayButton(g, "play", new RectangleF(cx - Theme.F(30), cy - Theme.F(30), Theme.F(60), Theme.F(60)), P.IsPlaying, () => { P.Toggle(); Poke(); }, P.IsPlaying ? "Pause (Space)" : "Play (Space)");
+                IconButton(g, "prev", new RectangleF(cx - Theme.F(96), cy - Theme.F(23), Theme.F(46), Theme.F(46)), "prev", () => { P.Prev(); Poke(); }, "Previous (P)", circleBg: true);
+                IconButton(g, "next", new RectangleF(cx + Theme.F(50), cy - Theme.F(23), Theme.F(46), Theme.F(46)), "next", () => { P.Next(); Poke(); }, "Next (N)", circleBg: true);
+                g.Restore(st);
+                st = g.Save();
+                g.TranslateTransform(0, -(1 - ui) * Theme.F(120));
+                IconButton(g, "close", new RectangleF(Width - pad - Theme.F(44), pad - Theme.F(14), Theme.F(44), Theme.F(44)), "close", owner.Close, "Close (Esc)", circleBg: true);
+                g.Restore(st);
+            }
+            Intro(g);
+        }
+
+        // no lyrics: the cover floats in the middle, pulsing gently with the music
+        void DrawCoverCenter(Graphics g, Track t)
+        {
+            float s = (float)Math.Round(Math.Min(Width, Height) * 0.34f), pulse = 1 + space.Energy * 0.025f;
+            var r = new RectangleF((float)Math.Round((Width - s) / 2), (float)Math.Round(Height * 0.4f - s / 2), s, s);
+            space.GlowAt(g, RectangleF.Inflate(r, s * 0.6f, s * 0.6f), 0.5f + 0.45f * space.Energy);
+            var img = Art.Get(t);
+            // the cover is drawn at one size (so it's prepared once) and pulses by scaling
+            var st = g.Save();
+            g.TranslateTransform(r.X + s / 2, r.Y + s / 2); g.ScaleTransform(pulse, pulse); g.TranslateTransform(-(r.X + s / 2), -(r.Y + s / 2));
+            if (img != null) Theme.Image(g, img, r, s * 0.05f); else Theme.NoArt(g, r, s * 0.05f, t.Id);
+            g.Restore(st);
+            Theme.Write(g, "No lyrics for this song yet", Theme.Font(17), Theme.Alpha(Color.White, (int)(150 * songFade)), new RectangleF(0, r.Bottom + Theme.F(28), Width, Theme.F(30)), Theme.Center);
+        }
+
+        void Intro(Graphics g)
+        {
+            if (intro > 0.995f) return;
+            using (var b = new SolidBrush(Color.FromArgb((int)(255 * (1 - intro)), 0, 0, 0))) g.FillRectangle(b, 0, 0, Width, Height);
         }
     }
 }

@@ -36,7 +36,7 @@ namespace Aura
         public Player(Library lib, IAudio audio)
         {
             this.lib = lib; primary = this.audio = audio;
-            timer = new System.Windows.Forms.Timer { Interval = 200 };
+            timer = new System.Windows.Forms.Timer { Interval = 100 };
             timer.Tick += (s, e) => Poll();
             timer.Start();
         }
@@ -48,6 +48,26 @@ namespace Aura
         }
 
         public double Position => Current == null ? 0 : audio.Position;
+
+        // the position for animation: moves steadily between the engine's (sometimes coarse) reports
+        readonly System.Diagnostics.Stopwatch clock = System.Diagnostics.Stopwatch.StartNew();
+        double anchorPos, anchorAt; long anchorFor = -1; bool anchorPlaying;
+        public double SmoothPosition
+        {
+            get
+            {
+                if (Current == null) return 0;
+                double raw = audio.Position, now = clock.Elapsed.TotalSeconds;
+                bool playing = State == PlayState.Playing;
+                double guess = anchorPos + (anchorPlaying ? now - anchorAt : 0);
+                if (anchorFor != Current.Id || playing != anchorPlaying || Math.Abs(raw - guess) > 0.3) { anchorPos = raw; anchorAt = now; anchorFor = Current.Id; anchorPlaying = playing; return raw; }
+                // drift back toward the engine gently, so there are no jumps
+                anchorPos += (raw - guess) * 0.08;
+                guess = anchorPos + (anchorPlaying ? now - anchorAt : 0);
+                if (Looping && guess > LoopB) guess = LoopB;
+                return Math.Max(0, Math.Min(guess, Math.Max(raw, Duration)));
+            }
+        }
         public double Duration { get { var d = Current == null ? 0 : audio.Duration; return d > 0 ? d : Current?.Duration ?? 0; } }
 
         public IEnumerable<long> UpNext()
@@ -276,6 +296,7 @@ namespace Aura
             if (Current == null) return;
             audio.Position = Math.Max(0, Math.Min(sec, Math.Max(0, Duration - 0.25)));
             lastPos = audio.Position;
+            anchorFor = -1;
             Tick?.Invoke();
         }
 

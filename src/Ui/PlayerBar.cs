@@ -76,7 +76,7 @@ namespace Aura
             IconButton(g, "repeat", new RectangleF(cx + Theme.F(20) + Theme.F(24) + bs, by + Theme.F(1), bs, bs), P.Repeat == 2 ? "repeat1" : "repeat", P.CycleRepeat,
                 P.Repeat == 0 ? "Repeat" : P.Repeat == 1 ? "Repeating everything" : "Repeating this song", P.Repeat > 0);
 
-            double dur = P.Duration, pos = P.Position;
+            double dur = P.Duration, pos = P.SmoothPosition;
             float k = seekDrag >= 0 ? seekDrag : dur > 0 ? (float)(pos / dur) : 0;
             float tlw = Theme.F(46);
             var sr = new RectangleF(cx - midW / 2 + tlw, Theme.F(58), midW - tlw * 2, Theme.F(16));

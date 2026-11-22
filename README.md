@@ -31,8 +31,15 @@ installed side by side, and each keeps its own library:
 - **Now Playing and lyrics** — click the cover in the player bar (or the
   microphone, or Ctrl+L). Timed lyrics follow the song and light up word by
   word when the song has word timings; click a line to jump there.
-- **Full-screen lyrics** — over a slow starry space scene colored by the
-  cover (F11; Esc to leave).
+- **Full-screen lyrics** — deep space in the cover's colors: nebula clouds, a
+  band of the galaxy, a planet's glowing edge, three layers of drifting stars
+  and the odd shooting star. It moves with the music (a glow that breathes
+  with how loud the song is, stars that speed up on the big parts) and jumps
+  to a new sky with a warp when the song changes. The current line glows and
+  fills in word by word. F11 to open; Esc to leave; Space, ←/→, N/P work there.
+- **Smooth** — lyrics and animations are drawn in step with the screen's
+  refresh, and covers are prepared once per size, so scrolling and lyrics
+  don't stutter.
 - **Lyrics from everywhere** — lyrics already in your songs (including the
   timings and word timings the first AURA saves), a `.lrc` file next to the
   song, or found online. AURA looks on LRCLIB, Genius and lyrics.ovh by itself for songs

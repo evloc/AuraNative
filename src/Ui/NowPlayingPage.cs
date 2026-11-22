@@ -11,7 +11,8 @@ namespace Aura
     {
         readonly IShell shell;
         readonly LyricsPane pane = new LyricsPane();
-        readonly Timer tick = new Timer { Interval = 33 };
+        readonly Timer tick = new Timer { Interval = 250 };      // while paused: now and then is enough
+        readonly FrameClock frames;                               // while playing: every screen refresh
         Bitmap backdrop; long backdropFor = -1; Size backdropSize;
         RectangleF lyricsArea;
         Track shown;
@@ -20,16 +21,14 @@ namespace Aura
         {
             this.shell = shell;
             Scrollable = false;
-            tick.Tick += (s, e) =>
-            {
-                // smooth while lyrics move; slow and cheap otherwise
-                bool moving = shell.Player.IsPlaying && pane.Lyrics != null && pane.Lyrics.Timed;
-                tick.Interval = moving ? 33 : 250;
-                Invalidate();
-            };
+            tick.Tick += (s, e) => { minimized = FindForm()?.WindowState == FormWindowState.Minimized; if (!shell.Player.IsPlaying) Invalidate(); };
             tick.Start();
+            frames = new FrameClock(this, () => Visible && shell.Player.IsPlaying && FullLyricsForm.Open == 0 && !Minimized);
             Reload();
         }
+
+        bool minimized;
+        bool Minimized => minimized;
 
         public void Reload()
         {
@@ -38,7 +37,7 @@ namespace Aura
             Invalidate();
         }
 
-        protected override void Dispose(bool disposing) { if (disposing) { tick.Dispose(); backdrop?.Dispose(); } base.Dispose(disposing); }
+        protected override void Dispose(bool disposing) { if (disposing) { tick.Dispose(); frames.Dispose(); pane.Dispose(); backdrop?.Dispose(); } base.Dispose(disposing); }
 
         // the cover, blurred, behind everything
         void DrawBackdrop(Graphics g, Track t)
@@ -48,7 +47,7 @@ namespace Aura
             if (backdrop == null || backdropFor != t.Id || backdropSize != Size)
             {
                 backdrop?.Dispose();
-                backdrop = new Bitmap(Math.Max(1, Width), Math.Max(1, Height));
+                backdrop = new Bitmap(Math.Max(1, Width), Math.Max(1, Height), System.Drawing.Imaging.PixelFormat.Format32bppPArgb);
                 using (var tiny = new Bitmap(10, 10))
                 {
                     using (var tg = Graphics.FromImage(tiny)) { tg.InterpolationMode = InterpolationMode.HighQualityBilinear; tg.DrawImage(img, 0, 0, 10, 10); }
@@ -174,7 +173,8 @@ namespace Aura
                 AddHit("rm", rr, () => { shell.Lyrics.Remove(t); Reload(); }, "Wrong song? Remove the lyrics AURA found");
             }
             pane.Stage = false;
-            pane.Draw(g, lyricsArea, shell.Player.Position, this, sec => shell.Player.Seek(sec));
+            pane.Glow = Theme.Mix(Theme.AccentTarget, Color.White, 0.4f);
+            pane.Draw(g, lyricsArea, shell.Player.SmoothPosition, this, sec => shell.Player.Seek(sec));
         }
 
         public void SoundReady(long id) { if (id == shell.Player.Current?.Id) Invalidate(); }
@@ -206,7 +206,7 @@ namespace Aura
             Icons.Draw(g, "loop", new RectangleF(bx - Theme.F(26), ly, Theme.F(18), Theme.F(18)), P.Looping ? Theme.AccentText : Theme.Faint);
             // the wave
             var wr = new RectangleF(r.X, ly + Theme.F(28), r.Width, r.Height - Theme.F(28));
-            double pos = P.Position;
+            double pos = P.SmoothPosition;
             float k = dur > 0 ? (float)(pos / dur) : 0;
             if (P.Looping && dur > 0)
             {

@@ -14,6 +14,7 @@ namespace Aura
         static MainForm F;
         static string outDir;
         static int fails, passes;
+        static readonly HashSet<int> begun2 = new HashSet<int>();
         static readonly List<(string name, Func<bool> act)> steps = new List<(string, Func<bool>)>();
 
         static void Ok(bool c, string what) { if (c) passes++; else fails++; Console.WriteLine((c ? "PASS " : "FAIL ") + what); }
@@ -63,6 +64,7 @@ namespace Aura
                 }
                 if (!begun) { begun = true; started = DateTime.Now; }
                 bool done;
+                if (!begun2.Contains(i)) { begun2.Add(i); if (Environment.GetEnvironmentVariable("AURA_TEST_TRACE") != null) Console.WriteLine("  > " + steps[i].name); }
                 try { done = steps[i].act(); }
                 catch (Exception ex) { Console.WriteLine("FAIL step '" + steps[i].name + "' threw " + ex); fails++; done = true; }
                 if (done || (DateTime.Now - started).TotalSeconds > 60)
@@ -331,6 +333,17 @@ namespace Aura
                 var full = Application.OpenForms.OfType<FullLyricsForm>().FirstOrDefault();
                 Ok(full != null && full.Visible, "full-screen lyrics opens");
                 if (full != null) ShotForm(full, "22_fullscreen");
+                Console.WriteLine("  full screen: " + StageView.Drawn + " frames, " + StageView.DrawMs.ToString("0.0") + " ms each");
+                return true;
+            });
+            Step("full screen later", () => { if (!Pause(10)) return false; var full = Application.OpenForms.OfType<FullLyricsForm>().FirstOrDefault(); if (full != null) ShotForm(full, "22b_fullscreen_later"); return true; });
+            Step("full screen no lyrics", () => { P.PlayList(new[] { T("Leak (v2)").Id }.ToList()); return true; });
+            Step("full screen no lyrics shot", () =>
+            {
+                if (!Pause(12)) return false;
+                var full = Application.OpenForms.OfType<FullLyricsForm>().FirstOrDefault();
+                if (full != null) ShotForm(full, "22c_fullscreen_nolyrics");
+                P.PlayList(new[] { T("Robbery").Id }.ToList());
                 F.FullScreenLyrics();     // second press closes it
                 return true;
             });
