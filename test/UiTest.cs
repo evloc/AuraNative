@@ -294,7 +294,7 @@ namespace Aura
                 Ok(T("Robbery").HasLyrics, "the library knows Robbery has lyrics");
                 var n = F.Lyrics.Get(T("Night Drive"));
                 Ok(n != null && n.Timed && n.Lines[0].Text == "night drive sidecar line", "a .lrc file next to the song is used (" + n?.Source + ")");
-                Ok(F.Lyrics.Get(T("Hear Me Calling")) == null, "a song with no lyrics has none");
+                Ok(F.Lyrics.Get(T("Hear Me Calling")) == null, "a song with no lyrics has none (yet)");
                 return true;
             });
             Step("auto lyrics", () => F.Lyrics.Auto.Done >= 6 && !F.Lyrics.Auto.Running);
@@ -307,7 +307,9 @@ namespace Aura
                 var e = F.Lyrics.Get(T("Empty"));
                 Ok(e != null && e.Plain == "Empty words from Genius here\nsecond & final line", "Genius used when LRCLIB has nothing (" + (e?.Plain ?? "null").Replace("\n", "/") + ")");
                 Ok(F.Lyrics.Get(T("All Girls Are the Same")) == null, "a different artist is not saved");
-                Ok(F.Lyrics.Get(T("Hear Me Calling")) == null, "nothing found: nothing saved");
+                var h = F.Lyrics.Get(T("Hear Me Calling"));
+                Ok(h != null && h.Plain.Contains("hear me calling words line one") && h.Source == "Found on lyrics.ovh", "lyrics.ovh is used when LRCLIB and Genius have nothing (" + h?.Source + ")");
+                Ok(F.Lyrics.Get(T("Leak (v2)")) == null, "nothing found: nothing saved");
                 return true;
             });
             Step("play Robbery", () => { var t = T("Robbery"); P.PlayList(new[] { t.Id }.ToList()); F.Go(new Route("now")); return true; });
@@ -337,7 +339,7 @@ namespace Aura
                 Ok(!Application.OpenForms.OfType<FullLyricsForm>().Any(), "F11 again closes it");
                 return true;
             });
-            Step("song without lyrics", () => { P.PlayList(new[] { T("Hear Me Calling").Id }.ToList()); return true; });
+            Step("song without lyrics", () => { P.PlayList(new[] { T("Leak (v2)").Id }.ToList()); return true; });
             Step("no lyrics shot", () => { if (!Pause(8)) return false; Shot("23_now_none"); return true; });
             Step("plain lyrics shot", () => { P.PlayList(new[] { T("Empty").Id }.ToList()); return true; });
             Step("plain shot", () => { if (!Pause(8)) return false; Shot("24_now_plain"); return true; });
@@ -375,12 +377,22 @@ namespace Aura
             {
                 var keep = LyricsOnline.GeniusUrl;
                 LyricsOnline.GeniusUrl = "http://127.0.0.1:1";          // Genius refusing
-                var r = LyricsOnline.Search(T("Hear Me Calling"));
+                var r = LyricsOnline.Search(T("Leak (v2)"));
                 Ok(!r.Offline, "LRCLIB answering with no results while Genius is blocked isn't \"couldn't reach the sites\"");
                 var keepL = LyricsOnline.LrclibUrl;
                 LyricsOnline.LrclibUrl = "http://127.0.0.1:1";
-                r = LyricsOnline.Search(T("Hear Me Calling"));
-                Ok(r.Offline, "both sites failing still is");
+                var keepO = LyricsOnline.OvhUrl;
+                LyricsOnline.OvhUrl = "http://127.0.0.1:1";
+                r = LyricsOnline.Search(T("Leak (v2)"));
+                Ok(r.Offline, "every site failing still is");
+                LyricsOnline.OvhUrl = keepO;
+                LyricsOnline.GeniusUrl = "http://127.0.0.1:7900/genius403";
+                LyricsOnline.LrclibUrl = keepL;
+                r = LyricsOnline.Search(T("Lucid Dreams"));
+                Ok(!r.Offline && r.Found.Count > 0, "Genius refusing (403) doesn't stop the others");
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                LyricsOnline.Search(T("Lucid Dreams"));
+                Ok(File.ReadAllText(Path.Combine(App.DataDir, "error.log")).Contains("Genius refuses"), "and it's noted once, then Genius is left alone");
                 LyricsOnline.GeniusUrl = keep; LyricsOnline.LrclibUrl = keepL;
                 var log = File.ReadAllText(Path.Combine(App.DataDir, "error.log"));
                 Ok(log.Contains("lyrics: Genius didn't answer"), "and which site failed is written in error.log");

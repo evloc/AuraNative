@@ -140,7 +140,7 @@ namespace Aura
         public string Plain;       // words (Genius: filled in on demand)
         public double Score;
         public bool IsTimed => !string.IsNullOrEmpty(Synced);
-        public string SourceName => Source == "lrclib" ? "LRCLIB" : "Genius";
+        public string SourceName => Source == "lrclib" ? "LRCLIB" : Source == "ovh" ? "lyrics.ovh" : "Genius";
     }
 
     [DataContract] sealed class LrclibItem
@@ -169,6 +169,24 @@ namespace Aura
     {
         public static string LrclibUrl = Environment.GetEnvironmentVariable("AURA_LRCLIB_URL") ?? "https://lrclib.net";
         public static string GeniusUrl = Environment.GetEnvironmentVariable("AURA_GENIUS_URL") ?? "https://genius.com";
+        public static string OvhUrl = Environment.GetEnvironmentVariable("AURA_OVH_URL") ?? "https://api.lyrics.ovh";
+
+        [DataContract] sealed class OvhResp { [DataMember(Name = "lyrics")] public string Lyrics; }
+
+        // lyrics.ovh: words only, by exact artist and title
+        static List<Found> Ovh(string artist, string title)
+        {
+            var outp = new List<Found>();
+            if (artist.Length == 0 || title.Length == 0) return outp;
+            try
+            {
+                var r = Net.Json<OvhResp>(Net.Get(OvhUrl + "/v1/" + Uri.EscapeDataString(artist) + "/" + Uri.EscapeDataString(title), 8000));
+                var text = Regex.Replace((r?.Lyrics ?? "").Replace("\r\n", "\n").Replace("\r", "\n"), @"\n{3,}", "\n\n").Trim();
+                if (text.Length >= 40) outp.Add(new Found { Source = "ovh", Title = title, Artist = artist, Plain = text });
+            }
+            catch (WebException e) when ((e.Response as HttpWebResponse)?.StatusCode == HttpStatusCode.NotFound) { }    // simply not there
+            return outp;
+        }
 
         static readonly Regex LeakWords = new Regex(@"\b(snippet|cdq|hq|lq|og|leak(?:ed)?|unreleased|unrel|unr|full|remaster(?:ed)?|v\d+|version\s*\d+|session|sessions|demo|rough|reference|ref|throwaway|alt|alternate)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
@@ -248,9 +266,20 @@ namespace Aura
             return outp;
         }
 
+        // Genius sometimes refuses programs like AURA (403); after that it isn't asked again until AURA restarts
+        static volatile bool geniusRefused;
+
         static List<Found> Genius(string q)
         {
-            var json = Net.Get(GeniusUrl + "/api/search/multi?per_page=5&q=" + Uri.EscapeDataString(q), 8000, Net.BrowserUA);
+            if (geniusRefused) return new List<Found>();
+            string json;
+            try { json = Net.Get(GeniusUrl + "/api/search/multi?per_page=5&q=" + Uri.EscapeDataString(q), 8000, Net.BrowserUA, "application/json, text/plain, */*", GeniusUrl + "/"); }
+            catch (WebException e) when ((e.Response as HttpWebResponse)?.StatusCode == HttpStatusCode.Forbidden)
+            {
+                geniusRefused = true;
+                App.Log("lyrics: Genius refuses AURA's searches (403) — using LRCLIB and lyrics.ovh");
+                return new List<Found>();
+            }
             var resp = Net.Json<GeniusResp>(json);
             var outp = new List<Found>(); var seen = new HashSet<string>();
             foreach (var sec in resp?.Response?.Sections ?? new List<GeniusSection>())
@@ -270,7 +299,7 @@ namespace Aura
             var host = new Uri(url).Host;
             bool ours = GeniusUrl != "https://genius.com" && url.StartsWith(GeniusUrl, StringComparison.OrdinalIgnoreCase);
             if (!(host == "genius.com" || host.EndsWith(".genius.com")) && !ours) throw new ArgumentException("not a Genius link");
-            var html = Net.Get(url, 10000, Net.BrowserUA, "text/html");
+            var html = Net.Get(url, 10000, Net.BrowserUA, "text/html,application/xhtml+xml", GeniusUrl + "/");
             var sb = new StringBuilder();
             int depth = 0, skip = 0;
             var tags = new HashSet<string> { "div", "span", "a", "i", "b", "em", "strong", "p" };
@@ -343,6 +372,7 @@ namespace Aura
                 tasks.Add(("LRCLIB", Task.Run(() => Lrclib(qq))));
                 tasks.Add(("Genius", Task.Run(() => Genius(qq))));
             }
+            if (string.IsNullOrWhiteSpace(query) && artist.Length > 0 && title.Length > 0) tasks.Add(("lyrics.ovh", Task.Run(() => Ovh(artist, title))));
             try { Task.WaitAll(tasks.Select(x => (Task)x.task).ToArray(), 9000); } catch { }
             int errors = 0;
             var all = new List<Found>();
@@ -388,6 +418,8 @@ namespace Aura
             var fits = lr.Where(r => r.IsTimed && dur > 0 && r.Duration > 0 && Math.Abs(r.Duration - dur) <= 2.5).OrderBy(r => Math.Abs(r.Duration - dur)).FirstOrDefault();
             if (fits != null) return (fits.Synced, "LRCLIB", false);
             if (lr.Count > 0) return (lr[0].Plain, "LRCLIB", false);
+            var ovh = res.Found.FirstOrDefault(r => r.Source == "ovh" && !string.IsNullOrWhiteSpace(r.Plain));
+            if (ovh != null) return (ovh.Plain, "lyrics.ovh", false);
             foreach (var r in good.Where(r => r.Source == "genius").Take(2))
             {
                 try { var text = GeniusLyrics(r.Url); if (text.Length >= 40) return (text, "Genius", false); } catch { }

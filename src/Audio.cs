@@ -26,15 +26,17 @@ namespace Aura
         public static IAudio Create(bool test)
         {
             if (test || !App.IsWindows) return new TestAudio();
-            return (IAudio)WmpAudio.TryCreate() ?? new MciAudio();
+            if (Environment.GetEnvironmentVariable("AURA_ENGINE") == "wmp") return (IAudio)WmpAudio.TryCreate() ?? new MciAudio();
+            return (IAudio)MfAudio.TryCreate() ?? (IAudio)WmpAudio.TryCreate() ?? new MciAudio();
         }
 
-        // a second engine to try when the first can't play a song
-        public static IAudio Fallback(IAudio first)
+        // the next engine to try when one can't play a song: Media Foundation, then Windows Media, then MCI
+        public static IAudio Fallback(IAudio last)
         {
-            if (first is TestAudio) return Environment.GetEnvironmentVariable("AURA_TEST_FALLBACK") != null ? new TestAudio { Picky = false } : null;
-            if (first is WmpAudio) return new MciAudio();
-            return WmpAudio.TryCreate();
+            if (last is TestAudio ta) return ta.Picky && Environment.GetEnvironmentVariable("AURA_TEST_FALLBACK") != null ? new TestAudio { Picky = false } : null;
+            if (last is MfAudio) return (IAudio)WmpAudio.TryCreate() ?? new MciAudio();
+            if (last is WmpAudio) return new MciAudio();
+            return null;
         }
     }
 

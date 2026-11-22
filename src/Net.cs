@@ -16,11 +16,13 @@ namespace Aura
             try { ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12; } catch { }
         }
 
-        public static string Get(string url, int timeoutMs = 9000, string ua = null, string accept = "application/json")
+        public static string Get(string url, int timeoutMs = 9000, string ua = null, string accept = "application/json", string referer = null)
         {
             var req = (HttpWebRequest)WebRequest.Create(url);
             req.UserAgent = ua ?? AppUA;
             req.Accept = accept;
+            if (referer != null) req.Referer = referer;
+            if (ua == BrowserUA) req.Headers["Accept-Language"] = "en-US,en;q=0.9";
             req.Timeout = timeoutMs;
             req.ReadWriteTimeout = timeoutMs;
             req.AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate;

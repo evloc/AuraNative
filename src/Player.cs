@@ -9,8 +9,9 @@ namespace Aura
     {
         readonly Library lib;
         readonly IAudio primary;
-        IAudio fallback, audio;        // audio: the engine playing the current song
-        bool triedFallback;
+        IAudio audio;                  // the engine playing the current song
+        readonly List<IAudio> spares = new List<IAudio>();     // engines to try when the main one can't play a song
+        int tried;
         readonly System.Windows.Forms.Timer timer;
         readonly Random rnd = new Random();
 
@@ -22,7 +23,7 @@ namespace Aura
         public Track Current { get; private set; }
         public PlayState State { get; private set; } = PlayState.Stopped;
         public bool IsPlaying => State == PlayState.Playing;
-        public string EngineName => primary.Name;
+        public string EngineName => primary.Name + (primary is MfAudio || primary is WmpAudio ? " (with backups)" : "");
 
         public event Action TrackChanged, StateChanged, QueueChanged, Tick;
         public event Action<string> Problem;
@@ -178,8 +179,8 @@ namespace Aura
 
         bool LoadWith(Track t, bool play)
         {
-            if (audio != primary) { try { audio.Stop(); } catch { } audio = primary; }
-            triedFallback = false;
+            if (audio != primary) { try { audio.Unload(); } catch { } audio = primary; }
+            tried = 0;
             playPath = t.Path;
             var kind = AudioKind.Detect(t.Path);
             if (!AudioKind.Matches(t.Path, kind))
@@ -198,17 +199,25 @@ namespace Aura
 
         bool SwitchToFallback(Track t, bool play)
         {
-            if (triedFallback) return false;
-            triedFallback = true;
-            if (fallback == null) fallback = AudioEngine.Fallback(primary);
-            if (fallback == null) return false;
-            try { primary.Stop(); } catch { }
-            App.Log("trying " + fallback.Name + " for " + t.Path);
-            if (!fallback.Load(playPath ?? t.Path)) return false;
-            audio = fallback;
-            audio.Volume = volume;
-            if (play) audio.Play();
-            return true;
+            while (true)
+            {
+                IAudio next;
+                if (tried < spares.Count) next = spares[tried];
+                else
+                {
+                    next = AudioEngine.Fallback(spares.Count == 0 ? primary : spares[spares.Count - 1]);
+                    if (next == null) return false;
+                    spares.Add(next);
+                }
+                tried++;
+                try { audio.Unload(); } catch { }
+                App.Log("trying " + next.Name + " for " + t.Path);
+                if (!next.Load(playPath ?? t.Path)) continue;
+                audio = next;
+                audio.Volume = volume;
+                if (play) audio.Play();
+                return true;
+            }
         }
 
         void StopAll()
@@ -396,6 +405,6 @@ namespace Aura
             TrackChanged?.Invoke();
         }
 
-        public void Dispose() { timer.Stop(); primary.Dispose(); fallback?.Dispose(); }
+        public void Dispose() { timer.Stop(); primary.Dispose(); foreach (var s in spares) s.Dispose(); }
     }
 }

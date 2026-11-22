@@ -35,7 +35,7 @@ installed side by side, and each keeps its own library:
   cover (F11; Esc to leave).
 - **Lyrics from everywhere** — lyrics already in your songs (including the
   timings and word timings the first AURA saves), a `.lrc` file next to the
-  song, or found online. AURA looks on LRCLIB and Genius by itself for songs
+  song, or found online. AURA looks on LRCLIB, Genius and lyrics.ovh by itself for songs
   without lyrics and only keeps a match when the title and artist both agree;
   **Find lyrics** lets you search and pick yourself. Found lyrics are saved in
   AURA — your music files aren't changed.
@@ -56,6 +56,9 @@ installed side by side, and each keeps its own library:
   side by side; switch versions in Now Playing without losing your place.
 - **Stats** — listening time, plays by day or month, top songs and artists.
 - **Themes** — Midnight, Neon, Sunset, Ocean and Mono.
+- **Plays with Windows' own Media Foundation engine** (the one behind Edge and
+  the Media Player app), with Windows Media Player's engine and MCI as backups
+  — so it doesn't need the old Windows Media Player installed.
 - **Plays awkward files** — songs whose path is very long or has a folder
   ending in a space; files that are really M4A, Opus, FLAC or WAV but named
   .mp3 (right-click → More → Fix file type renames them properly); and if
