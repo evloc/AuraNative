@@ -115,7 +115,7 @@ namespace Aura
 
         void DrawStage(Graphics g)
         {
-            float dt = frames.Dt;
+            float dt = frames.Step();
             var P = shell.Player;
             var t = P.Current;
             double pos = P.SmoothPosition;

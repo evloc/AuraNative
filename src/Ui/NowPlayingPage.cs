@@ -98,7 +98,7 @@ namespace Aura
             Theme.Write(g, t.Name, Theme.Font(26, FontStyle.Bold), Theme.Text, new RectangleF(tx, ty, tw, Theme.F(36)));
             ty += Theme.F(38);
             var af = Theme.Font(15);
-            float aw = Math.Min(tw, Theme.Measure(g, t.ArtistName, af) + Theme.F(6));
+            float aw = Math.Min(tw, Theme.Measure(g, t.ArtistName, af) * 1.12f + Theme.F(12));
             var arr = new RectangleF(tx, ty, aw, Theme.F(24));
             using (var uf = new Font(af, Hover("artist") ? FontStyle.Underline : FontStyle.Regular)) Theme.Write(g, t.ArtistName, uf, Hover("artist") ? Theme.Text : Theme.Sub, arr);
             AddHit("artist", arr, () => shell.Go(new Route("artist", t.MainArtist.ToLowerInvariant())));
@@ -222,6 +222,7 @@ namespace Aura
             int n = Math.Max(10, (int)(wr.Width / (bar + gap)));
             var peaks = snd?.Peaks;
             float mid = wr.Y + wr.Height / 2;
+            var smooth = g.SmoothingMode; g.SmoothingMode = SmoothingMode.None;     // plain bars draw much faster
             using (var played = new SolidBrush(Theme.Mix(Theme.Accent, Color.White, 0.15f)))
             using (var rest = new SolidBrush(Theme.Alpha(Theme.Text, 70)))
                 for (int i = 0; i < n; i++)
@@ -240,6 +241,7 @@ namespace Aura
                     float x = wr.X + i * (bar + gap);
                     g.FillRectangle((float)i / n < k ? played : rest, x, mid - hgt / 2, bar, hgt);
                 }
+            g.SmoothingMode = smooth;
             // where you are
             using (var pen = new Pen(Theme.Text, Theme.F(1.5f))) g.DrawLine(pen, wr.X + k * wr.Width, wr.Y - Theme.F(3), wr.X + k * wr.Width, wr.Bottom + Theme.F(3));
             var hit = AddHit("wave", wr, null, loopTip);

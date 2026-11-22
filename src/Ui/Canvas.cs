@@ -83,7 +83,17 @@ namespace Aura
             else if (bottom > target + Height) ScrollTo(bottom - Height);
         }
 
+        public double PaintMs;          // how long the last redraw took
+        readonly System.Diagnostics.Stopwatch paintWatch = new System.Diagnostics.Stopwatch();
+
         protected override void OnPaint(PaintEventArgs e)
+        {
+            paintWatch.Restart();
+            try { PaintAll(e); }
+            finally { PaintMs = PaintMs * 0.7 + paintWatch.Elapsed.TotalMilliseconds * 0.3; }
+        }
+
+        void PaintAll(PaintEventArgs e)
         {
             var g = e.Graphics;
             g.Clear(BackColor);

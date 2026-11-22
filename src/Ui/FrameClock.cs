@@ -1,71 +1,73 @@
 using System;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
-using System.Threading;
 using System.Windows.Forms;
 
 namespace Aura
 {
-    // Smooth animation: one frame each time the screen refreshes (Windows tells us through DwmFlush),
-    // instead of a timer that drifts and stutters. Frames are skipped, never queued up, when drawing is slow.
+    // Animation frames, driven by an ordinary window timer. That matters: Windows hands out timer ticks
+    // and redraws only after clicks, keys and other work are done, so animating can never lock the
+    // window up (an earlier version posted messages, which Windows puts ahead of the mouse).
+    // The timer is made precise while animating, and slows down by itself if drawing takes long.
     sealed class FrameClock : IDisposable
     {
-        [DllImport("dwmapi.dll")] static extern int DwmFlush();
+        [DllImport("winmm.dll")] static extern int timeBeginPeriod(int ms);
+        [DllImport("winmm.dll")] static extern int timeEndPeriod(int ms);
 
         readonly Control target;
         readonly Func<bool> wanted;
+        readonly Timer timer = new Timer { Interval = 16 };
         readonly Stopwatch sw = Stopwatch.StartNew();
-        Thread thread;
-        volatile bool stop, pending;
-        volatile float lastCost;          // how long the last frame took, ms
-        double last;
-        readonly AutoResetEvent wake = new AutoResetEvent(false);
-        public float Dt { get; private set; } = 1 / 60f;     // seconds since the last frame (capped)
+        double lastStep;
+        bool precise;
+        public float Dt { get; private set; } = 1 / 60f;
         public double Now => sw.Elapsed.TotalSeconds;
         public event Action Frame;
 
-        // wanted: whether to animate right now (when not, it checks again 4 times a second)
+        // wanted: whether to animate right now (checked on every tick; when not, ticks slow to 4 a second)
         public FrameClock(Control target, Func<bool> wanted)
         {
             this.target = target; this.wanted = wanted;
-            thread = new Thread(Run) { IsBackground = true, Name = "frames", Priority = ThreadPriority.AboveNormal };
-            thread.Start();
-        }
-
-        void Run()
-        {
-            bool dwm = App.IsWindows;
-            while (!stop)
-            {
-                bool on;
-                try { on = target.IsHandleCreated && !target.IsDisposed && wanted(); } catch { on = false; }
-                if (!on) { wake.WaitOne(250); continue; }
-                if (dwm) { try { if (DwmFlush() < 0) Thread.Sleep(15); } catch { dwm = false; } }
-                else Thread.Sleep(16);
-                if (pending || stop) continue;
-                // a slow frame leaves the window some room for everything else (clicks, timers) before the next
-                if (lastCost > 10) Thread.Sleep((int)Math.Min(40, lastCost / 3));
-                pending = true;
-                try { target.BeginInvoke(new Action(Tick)); } catch { pending = false; Thread.Sleep(50); }
-            }
+            timer.Tick += (s, e) => Tick();
+            timer.Start();
         }
 
         void Tick()
         {
-            pending = false;
-            if (target.IsDisposed) return;
-            double now = sw.Elapsed.TotalSeconds;
-            Dt = (float)Math.Max(0.001, Math.Min(0.1, now - last));
-            last = now;
+            if (target.IsDisposed) { Dispose(); return; }
+            bool on;
+            try { on = target.Visible && wanted(); } catch { on = false; }
+            Precise(on);
+            if (!on) { timer.Interval = 250; return; }
+            // keep the window responsive: if drawing is slow, ask for fewer frames
+            double cost = (target as Canvas)?.PaintMs ?? 0;
+            timer.Interval = (int)Math.Max(15, Math.Min(66, cost * 1.6));
             Frame?.Invoke();
             target.Invalidate();
-            target.Update();          // draw now, so the frame lands on this refresh
-            lastCost = (float)((sw.Elapsed.TotalSeconds - now) * 1000);
         }
 
-        public void Nudge() => wake.Set();
+        // call at the start of drawing a frame: seconds since the last one (capped)
+        public float Step()
+        {
+            double now = sw.Elapsed.TotalSeconds;
+            Dt = (float)Math.Max(0.001, Math.Min(0.1, now - lastStep));
+            lastStep = now;
+            return Dt;
+        }
 
-        public void Dispose() { stop = true; wake.Set(); }
+        void Precise(bool on)
+        {
+            if (on == precise || !App.IsWindows) return;
+            try { if (on) timeBeginPeriod(1); else timeEndPeriod(1); precise = on; } catch { }
+        }
+
+        public void Nudge() { }
+
+        public void Dispose()
+        {
+            timer.Stop(); timer.Dispose();
+            Precise(false);
+        }
 
         // frame-rate independent easing: how far to move toward a target this frame
         public static float Ease(float dt, float speed) => 1 - (float)Math.Exp(-dt * speed);

@@ -42,7 +42,7 @@ namespace Aura
             {
                 Theme.Write(g, t.Name, Theme.Font(14.5f, FontStyle.Regular, true), Theme.Text, new RectangleF(tx, h / 2 - Theme.F(22), tw, Theme.F(22)));
                 bool ah = Hover("artist");
-                var arr = new RectangleF(tx, h / 2 + Theme.F(1), Math.Min(tw, Theme.Measure(g, t.ArtistName, Theme.Font(12.5f)) + Theme.F(6)), Theme.F(20));
+                var arr = new RectangleF(tx, h / 2 + Theme.F(1), Math.Min(tw, Theme.Measure(g, t.ArtistName, Theme.Font(12.5f)) * 1.12f + Theme.F(12)), Theme.F(20));
                 using (var f = new Font(Theme.Font(12.5f), ah ? FontStyle.Underline : FontStyle.Regular))
                     Theme.Write(g, t.ArtistName, f, ah ? Theme.Text : Theme.Sub, arr);
                 AddHit("artist", arr, () => shell.Go(new Route("artist", t.MainArtist.ToLowerInvariant())));
