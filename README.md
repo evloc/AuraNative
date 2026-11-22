@@ -1,15 +1,3 @@
-# AURA Native
-
-The new AURA: a plain Windows app written in C#. No Python and no web engine —
-just one small `AURA Native.exe` that runs on the .NET Framework already built
-into Windows 10 and 11. Nothing else to install.
-
-It is a separate app from the first AURA (github.com/evloc/Aura). Both can be
-installed side by side, and each keeps its own library:
-
-- AURA Native: `%APPDATA%\AURA Native`
-- the first AURA: `%APPDATA%\Unreleased`
-
 ## What it does so far
 
 - **Your music, where it is.** Reads MP3, M4A/AAC, FLAC, Ogg, Opus, WAV and
@@ -81,13 +69,4 @@ Space play/pause · Ctrl+L Now Playing · F11 full-screen lyrics · Ctrl+→ / C
 Ctrl+F search · Alt+← / Alt+→ back / forward · Enter plays the selected song ·
 Delete removes from a playlist or up next.
 
-## Releasing
 
-    git tag v0.1.0
-    git push origin v0.1.0
-
-GitHub builds it on Windows and puts `AURA-Native-Setup.exe` and
-`AURA-Native-portable.zip` on the release page.
-
-To build it yourself on Windows, install the .NET SDK and run
-`dotnet build AuraNative.csproj -c Release`; the app ends up in `bin\Release`.
