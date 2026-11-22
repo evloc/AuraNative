@@ -67,8 +67,12 @@ namespace Aura
             }
             float bx = pad;
             var ready = groups.Where(x => x.Checked).ToList();
-            if (ready.Count > 0)
-                bx = Pill(g, "all", bx, y, ready.Count == 1 ? "Clean it up" : "Clean up all " + ready.Count.ToString("N0"), () => CleanUp(ready), true, "check", 38, "Keep the best copy of each and move the others to _duplicates").Right + Theme.F(10);
+            var all = groups.ToList();
+            // every group at once (the copies only move to _duplicates folders, so nothing is lost)
+            if (all.Count > 0)
+                bx = Pill(g, "all", bx, y, all.Count == 1 ? "Clean it up" : "Clean up all " + all.Count.ToString("N0"), () => CleanUp(all), true, "check", 38, "Keep the best copy of each and move the others to _duplicates").Right + Theme.F(10);
+            if (ready.Count > 0 && ready.Count < all.Count)
+                bx = Pill(g, "ready", bx, y, "Only the " + ready.Count.ToString("N0") + " confirmed by listening", () => CleanUp(ready), false, null, 38, "Leave the ones AURA hasn't heard yet").Right + Theme.F(10);
             Pill(g, "again", bx, y, heard > heardAtLook ? "Look again (AURA has heard more songs)" : "Look again", Look, false, "refresh", 38);
             y += Theme.F(58);
             if (groups.Count == 0)
@@ -137,7 +141,9 @@ namespace Aura
         {
             var jobs = which.Select(x => (x, KeepOf(x))).ToList();
             int n = jobs.Sum(j => j.x.Tracks.Count - 1);
-            if (!MainForm.UiTestMode && System.Windows.Forms.MessageBox.Show(this, "Move " + Theme.Count(n, "extra copy", "extra copies") + " into _duplicates folders?\n\nThe copies you keep get their plays, playlists and favorites. Nothing is deleted — you can delete the _duplicates folders yourself later.",
+            int unheard = which.Count(x => !x.Checked);
+            if (!MainForm.UiTestMode && System.Windows.Forms.MessageBox.Show(this, "Move " + Theme.Count(n, "extra copy", "extra copies") + " from " + Theme.Count(which.Count, "song") + " into _duplicates folders?\n\nThe copies you keep get their plays, playlists and favorites. Nothing is deleted — you can delete the _duplicates folders yourself later."
+                + (unheard > 0 ? "\n\n" + unheard + " of these were matched by name and length only (AURA hasn't listened to them yet), so glance over them first if you're not sure." : ""),
                 "Clean up duplicates", System.Windows.Forms.MessageBoxButtons.OKCancel, System.Windows.Forms.MessageBoxIcon.Question) != System.Windows.Forms.DialogResult.OK) return;
             shell.MergeDuplicates(jobs);
             foreach (var (x, _) in jobs) groups.Remove(x);
