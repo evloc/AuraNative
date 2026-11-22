@@ -54,6 +54,7 @@ namespace Aura
             y += Theme.F(28);
             NavItem(g, ref y, "missing", "edit", "Missing info", new Route("missing"), On("missing"));
             NavItem(g, ref y, "versions", "album", "Versions", new Route("versions"), On("versions") || On("version"));
+            NavItem(g, ref y, "duplicates", "copies", "Duplicates", new Route("duplicates"), On("duplicates"));
             NavItem(g, ref y, "stats", "bars", "Stats", new Route("stats"), On("stats"));
 
             y += Theme.F(14);

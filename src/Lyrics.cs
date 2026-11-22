@@ -440,6 +440,8 @@ namespace Aura
             this.lib = lib;
             lib.Db.Script(@"CREATE TABLE IF NOT EXISTS found_lyrics (track_id INTEGER PRIMARY KEY, text TEXT, source TEXT, picked INTEGER DEFAULT 0, added REAL);
 CREATE TABLE IF NOT EXISTS lyrics_tried (track_id INTEGER PRIMARY KEY, ts REAL)");
+            if (!lib.Db.Rows("PRAGMA table_info(found_lyrics)").Any(r => Conv.S(r[1]) == "words"))
+                lib.Db.Exec("ALTER TABLE found_lyrics ADD COLUMN words TEXT DEFAULT ''");
         }
 
         public static string Sidecar(string path)
@@ -467,8 +469,8 @@ CREATE TABLE IF NOT EXISTS lyrics_tried (track_id INTEGER PRIMARY KEY, ts REAL)"
 
         Lyrics Load(Track t)
         {
-            var row = lib.Db.Rows("SELECT text, source, picked FROM found_lyrics WHERE track_id=?", t.Id).FirstOrDefault();
-            Lyrics Found() => row == null ? null : Mark(Lyrics.From(Conv.S(row[0]), null, null, "Found on " + Conv.S(row[1])), true);
+            var row = lib.Db.Rows("SELECT text, source, picked, words FROM found_lyrics WHERE track_id=?", t.Id).FirstOrDefault();
+            Lyrics Found() => row == null ? null : Mark(Lyrics.From(Conv.S(row[0]), null, Conv.S(row[3]), Conv.S(row[1]).StartsWith("AURA") ? Conv.S(row[1]) : "Found on " + Conv.S(row[1])), true);
             if (row != null && Conv.L(row[2]) != 0) { var f = Found(); if (f != null) return f; }     // you picked these
             try
             {
@@ -490,9 +492,9 @@ CREATE TABLE IF NOT EXISTS lyrics_tried (track_id INTEGER PRIMARY KEY, ts REAL)"
 
         static Lyrics Mark(Lyrics l, bool fromAura) { if (l != null) l.FromAura = fromAura; return l; }
 
-        public void Save(Track t, string text, string source, bool picked)
+        public void Save(Track t, string text, string source, bool picked, string words = "")
         {
-            lib.Db.Exec("INSERT OR REPLACE INTO found_lyrics (track_id,text,source,picked,added) VALUES (?,?,?,?,?)", t.Id, text, source, picked, Library.Now);
+            lib.Db.Exec("INSERT OR REPLACE INTO found_lyrics (track_id,text,source,picked,added,words) VALUES (?,?,?,?,?,?)", t.Id, text, source, picked, Library.Now, words ?? "");
             Forget(t.Id);
             Changed?.Invoke(t.Id);
         }

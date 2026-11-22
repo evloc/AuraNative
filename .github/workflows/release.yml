@@ -17,7 +17,7 @@ permissions:
 jobs:
   build:
     runs-on: windows-latest
-    timeout-minutes: 20
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
 
@@ -35,6 +35,22 @@ jobs:
           dotnet build AuraNative.csproj -c Release -nologo "-p:Version=$env:AURA_VERSION"
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
+      - name: Build the speech part (whisper.cpp)
+        shell: pwsh
+        run: |
+          git clone --depth 1 --branch v1.7.6 https://github.com/ggml-org/whisper.cpp.git native\whisper.cpp
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          # one for newer processors (AVX2), one that runs on any 64-bit PC; AURA picks the right one
+          cmake -S native -B build\fast -A x64 -DGGML_AVX=ON -DGGML_AVX2=ON -DGGML_FMA=ON -DGGML_F16C=ON
+          cmake --build build\fast --config Release --target aura_whisper -j 4
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          cmake -S native -B build\basic -A x64 -DGGML_AVX=OFF -DGGML_AVX2=OFF -DGGML_FMA=OFF -DGGML_F16C=OFF
+          cmake --build build\basic --config Release --target aura_whisper -j 4
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          Copy-Item build\fast\Release\aura_whisper.dll "bin\Release\aura_whisper.dll"
+          Copy-Item build\basic\Release\aura_whisper.dll "bin\Release\aura_whisper_basic.dll"
+          Get-ChildItem bin\Release
+
       - name: Self-test
         shell: pwsh
         run: |
@@ -48,7 +64,7 @@ jobs:
           if (-not (Test-Path "C:\Program Files (x86)\Inno Setup 6\ISCC.exe")) { choco install innosetup -y --no-progress }
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DAppVersion=$env:AURA_VERSION" installer.iss
           if ($LASTEXITCODE -ne 0) { exit 1 }
-          Compress-Archive -Path "bin\Release\AURA Native.exe","bin\Release\AURA Native.exe.config" -DestinationPath "dist\AURA-Native-portable.zip"
+          Compress-Archive -Path "bin\Release\AURA Native.exe","bin\Release\AURA Native.exe.config","bin\Release\aura_whisper.dll","bin\Release\aura_whisper_basic.dll" -DestinationPath "dist\AURA-Native-portable.zip"
 
       - name: Keep the files from a test run
         if: github.ref_type != 'tag'

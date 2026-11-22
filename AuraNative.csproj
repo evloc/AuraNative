@@ -13,7 +13,7 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <PlatformTarget>AnyCPU</PlatformTarget>
     <Prefer32Bit>false</Prefer32Bit>
-    <Version>0.3.2</Version>
+    <Version>0.4.0</Version>
     <Product>AURA Native</Product>
     <Company>AURA</Company>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
@@ -30,6 +30,9 @@
   <!-- test helpers are only built for testing, never into the Windows app -->
   <ItemGroup Condition="'$(OS)' == 'Windows_NT'">
     <Compile Remove="test/**" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Remove="native/**;build/**" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="System.Windows.Forms" />

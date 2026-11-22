@@ -418,6 +418,27 @@ namespace Aura
                     case "edit":
                         g.DrawLines(pen, new[] { new PointF(4.5f, 19.5f), new PointF(5.2f, 15.5f), new PointF(15.8f, 4.9f), new PointF(19.1f, 8.2f), new PointF(8.5f, 18.8f), new PointF(4.5f, 19.5f) });
                         break;
+                    case "copies":     // two pages, one over the other
+                        using (var p = Theme.Round(new RectangleF(8, 3.5f, 12, 13.5f), 2)) g.DrawPath(pen, p);
+                        using (var p = new GraphicsPath()) { p.AddLines(new[] { new PointF(5, 7.5f), new PointF(4, 7.5f), new PointF(4, 20.5f), new PointF(15.5f, 20.5f), new PointF(15.5f, 19.5f) }); g.DrawPath(pen, p); }
+                        break;
+                    case "loop":
+                        g.DrawArc(pen, 3.5f, 6, 9, 12, 90, 180);
+                        g.DrawArc(pen, 11.5f, 6, 9, 12, 270, 180);
+                        g.DrawLine(pen, 8, 6, 16, 6); g.DrawLine(pen, 8, 18, 16, 18);
+                        g.DrawLines(pen, new[] { new PointF(13.5f, 3.5f), new PointF(16, 6), new PointF(13.5f, 8.5f) });
+                        break;
+                    case "mini":       // a small window in a big one
+                        using (var p = Theme.Round(new RectangleF(3, 5, 18, 14), 2)) g.DrawPath(pen, p);
+                        using (var p = Theme.Round(new RectangleF(11.5f, 11.5f, 7, 5), 1)) g.FillPath(br, p);
+                        break;
+                    case "wave":
+                        foreach (var (x, h) in new[] { (4f, 4f), (7.5f, 10f), (11f, 16f), (14.5f, 8f), (18f, 12f) }) g.DrawLine(pen, x + 1, 12 - h / 2, x + 1, 12 + h / 2);
+                        break;
+                    case "convert":
+                        g.DrawLines(pen, new[] { new PointF(4, 9), new PointF(18, 9), new PointF(14.5f, 5.5f) });
+                        g.DrawLines(pen, new[] { new PointF(20, 15), new PointF(6, 15), new PointF(9.5f, 18.5f) });
+                        break;
                 }
             }
             g.Restore(state);

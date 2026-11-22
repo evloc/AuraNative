@@ -16,6 +16,8 @@ namespace Aura
             if (args.Length > 0 && args[0] == "--tagdump") return TagDump.Run(args.Skip(1).ToArray());
             if (args.Length > 0 && args[0] == "--sniff") return TagDump.Sniff(args.Skip(1).ToArray());
             if (args.Length > 0 && args[0] == "--tagwrite") return TagDump.Write(args.Skip(1).ToArray());
+            if (args.Length > 0 && args[0] == "--analyze") return TagDump.Analyze(args.Skip(1).ToArray());
+            if (args.Length > 0 && args[0] == "--match") return TagDump.Match(args.Skip(1).ToArray());
             if (args.Length > 0 && args[0] == "--lyricsdump") return TagDump.Lyrics(args.Skip(1).ToArray());
 #endif
             string data = Arg(args, "--data");
@@ -96,6 +98,18 @@ namespace Aura
             crashed = false;
         }
 
+        static void WriteTone(string path, double secs)
+        {
+            int rate = 44100, n = (int)(rate * secs);
+            using (var f = new BinaryWriter(File.Create(path)))
+            {
+                f.Write(System.Text.Encoding.ASCII.GetBytes("RIFF")); f.Write(36 + n * 4); f.Write(System.Text.Encoding.ASCII.GetBytes("WAVEfmt "));
+                f.Write(16); f.Write((short)1); f.Write((short)2); f.Write(rate); f.Write(rate * 4); f.Write((short)4); f.Write((short)16);
+                f.Write(System.Text.Encoding.ASCII.GetBytes("data")); f.Write(n * 4);
+                for (int i = 0; i < n; i++) { short v = (short)(8000 * Math.Sin(2 * Math.PI * 440 * i / rate) * (i % 11025 < 2000 ? 1 : 0.2)); f.Write(v); f.Write(v); }
+            }
+        }
+
         // checks the parts AURA needs, for the release build; writes selftest.txt
         static int SelfTest()
         {
@@ -116,6 +130,33 @@ namespace Aura
                 a.Dispose();
             }
             catch (Exception e) { lines.Add("audio        : not available (" + e.Message + ")"); }
+            // reading and writing sound through Media Foundation (Windows Server machines may not have it)
+            try
+            {
+                var dir = Path.Combine(Path.GetTempPath(), "aura-selftest");
+                Directory.CreateDirectory(dir);
+                var wav = Path.Combine(dir, "tone.wav");
+                WriteTone(wav, 3);
+                var mono = Decoder.Mono(wav, 0, 11025, 60, null, out double len);
+                lines.Add("read sound   : ok (" + len.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) + " s, " + mono.Length + " samples)");
+                var mp3 = Path.Combine(dir, "tone.mp3");
+                if (File.Exists(mp3)) File.Delete(mp3);
+                using (var w = new Mf.Mp3Writer(mp3, 2, 44100, 192))
+                {
+                    var pcm = new short[44100 * 2 * 3];
+                    for (int i = 0; i < pcm.Length / 2; i++) pcm[i * 2] = pcm[i * 2 + 1] = (short)(8000 * Math.Sin(2 * Math.PI * 440 * i / 44100.0));
+                    w.Write(pcm, pcm.Length); w.Finish();
+                }
+                var back = Tags.Read(mp3);
+                lines.Add("write MP3    : ok (" + new FileInfo(mp3).Length + " bytes, " + back.Duration.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) + " s)");
+                var s2 = SongSound.Analyze(mp3, 0, null);
+                lines.Add("listen       : ok (" + s2.Print.Length + " steps)");
+            }
+            catch (Exception e) { lines.Add("sound        : not available here (" + e.Message + ")"); }
+            // speech recognition: must load when it's installed
+            if (Whisper.Load()) lines.Add("speech       : ok");
+            else if (Whisper.LoadError.Contains("isn't installed")) lines.Add("speech       : not installed");
+            else { ok = false; lines.Add("speech       : FAILED " + Whisper.LoadError); }
             lines.Add("RESULT: " + (ok ? "OK" : "FAILED"));
             File.WriteAllLines(Path.Combine(App.DataDir, "selftest.txt"), lines);
             Console.WriteLine(string.Join(Environment.NewLine, lines));

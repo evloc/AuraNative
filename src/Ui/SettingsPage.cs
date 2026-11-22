@@ -125,6 +125,42 @@ namespace Aura
             if (without > 0) Pill(g, "again", x + cw - Theme.F(44) - Theme.F(220), lyy + Theme.F(32), "Look again for all", () => { shell.Lyrics.TryAllAgain(); shell.Toast("Looking again for songs without lyrics"); Invalidate(); }, false, "refresh", 34);
             y += h + Theme.F(20);
 
+            // ---- listening
+            h = Theme.F(196);
+            x = Card(g, y, h, "Listening", "AURA listens to each song once, slowly in the background, to draw its waveform, find its tempo (BPM) and key, line up versions when you switch between them, and spot duplicates that have different names. It runs at the lowest priority and rests between songs.", 60);
+            float sy = y + Theme.F(128);
+            Toggle(g, "listen", x, sy, cw - Theme.F(44), "Listen to songs in the background", shell.Prefs.Listen, () =>
+            {
+                shell.Prefs.Listen = !shell.Prefs.Listen; shell.Prefs.Save();
+                shell.Sound.Background = shell.Prefs.Listen; shell.Sound.Kick(); Invalidate();
+            });
+            int heard = shell.Sound.Done, all = shell.Lib.Tracks.Count;
+            string cur = shell.Sound.Current;
+            Theme.Write(g, heard >= all ? "Listened to every song." : "Listened to " + heard.ToString("N0") + " of " + all.ToString("N0") + " songs" + (cur.Length > 0 ? "  ·  now: " + cur : shell.Prefs.Listen ? "" : "  ·  paused (the song that's playing is still listened to)"),
+                Theme.Font(13), Theme.Faint, new RectangleF(x, sy + Theme.F(38), cw - Theme.F(60), Theme.F(24)));
+            y += h + Theme.F(20);
+
+            // ---- speech (auto-sync and transcribe)
+            h = Theme.F(176);
+            x = Card(g, y, h, "Lyrics in time", "Right-click a song → More → \"Write lyrics in time\" to time its lyrics to the song (auto-sync), or to write them down by listening (transcribe). It uses Whisper, on this PC. Each model downloads once.", 60);
+            float wy = y + Theme.F(124), wx = x;
+            bool any = false;
+            foreach (var m in Whisper.Models)
+            {
+                if (!m.Ready) continue;
+                any = true;
+                var mm = m;
+                long size = 0; try { size = new System.IO.FileInfo(m.File).Length; } catch { }
+                wx = Pill(g, "wm:" + m.Name, wx, wy, m.Name + " · " + (size / 1e6).ToString("0") + " MB", () =>
+                {
+                    if (System.Windows.Forms.MessageBox.Show(this, "Delete the " + mm.Name + " model? It can be downloaded again any time.", "AURA", System.Windows.Forms.MessageBoxButtons.OKCancel) != System.Windows.Forms.DialogResult.OK) return;
+                    try { System.IO.File.Delete(mm.File); } catch (Exception e) { shell.Toast("Couldn't delete it: " + e.Message); }
+                    Invalidate();
+                }, false, "trash", 32, "Delete this model").Right + Theme.F(8);
+            }
+            if (!any) Theme.Write(g, Whisper.Load() ? "No models downloaded yet." : "Not available: " + Whisper.LoadError + ".", Theme.Font(13), Theme.Faint, new RectangleF(x, wy, cw - Theme.F(60), Theme.F(30)));
+            y += h + Theme.F(20);
+
             // ---- updates
             h = Theme.F(150);
             x = Card(g, y, h, "Updates", "AURA Native checks GitHub for a new version when it opens, and puts an Update button at the top when there is one.");

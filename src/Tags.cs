@@ -112,6 +112,14 @@ namespace Aura
             return flac;
         }
 
+        // the description of an ID3 TXXX frame
+        public static string Id3Desc(byte[] fb)
+        {
+            int enc = fb[0], zl = (enc == 1 || enc == 2) ? 2 : 1;
+            int q = SkipZ(fb, 1, fb.Length, enc);
+            return Decode(fb, 1, Math.Max(0, q - 1 - zl), enc).Trim('\0', ' ');
+        }
+
         // ---------- ID3v2 ----------
         static long SkipId3(Stream f)
         {

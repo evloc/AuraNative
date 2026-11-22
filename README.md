@@ -54,6 +54,37 @@ installed side by side, and each keeps its own library:
 - **Missing info** — songs with no artist, title, cover, album, year or lyrics.
 - **Versions** — songs that come in more than one version (v2, CDQ, snippet…)
   side by side; switch versions in Now Playing without losing your place.
+- **Listens to your songs** — once, slowly, in the background (lowest
+  priority; it can be turned off in Settings). From that it draws each song's
+  **waveform** in Now Playing, finds its **tempo (BPM)** and **key** (with the
+  Camelot number), lines up **versions** so switching between them lands on
+  the same part of the song (even when one has a longer intro), and spots
+  duplicates that have different names.
+- **Waveform and A–B loop** — in Now Playing, click the waveform to jump, or
+  drag across it to loop a part (or use the A and B buttons).
+- **Duplicates** — finds the same song saved more than once: exact copies,
+  the same song in another file (WAV and MP3, CDQ and LQ…), and copies that
+  sound the same whatever they're called. AURA keeps the best copy (best
+  sound, then the most complete tags — you can pick another) and moves the
+  others into a `_duplicates` folder next to them. Nothing is deleted, and the
+  plays, playlists and favorites of the extra copies move to the one that's
+  kept. Different versions (v1, v2, snippets, remixes, sped up…) never count.
+- **Convert to MP3** — right-click → More → Convert to MP3, with Windows' own
+  MP3 encoder (128–320 kbps). Tags, cover and lyrics (with their timings) come
+  along, the song keeps its plays, playlists and favorite, and the original
+  goes into an `_originals` folder next to it.
+- **Lyrics in time** — right-click → More → Write lyrics in time (or the
+  waveform button in Now Playing): **auto-sync** times the lyrics a song has
+  to the music, word by word; **transcribe** writes them down by listening.
+  It uses Whisper (whisper.cpp) on your PC — nothing is uploaded. The model
+  downloads once (base 148 MB, small 488 MB, or bigger).
+- **Windows media controls** — the pop-up that shows with the volume keys
+  and the lock screen show the song and cover, with play/pause, next and
+  previous.
+- **Taskbar buttons** — previous, play/pause and next under AURA's taskbar
+  thumbnail.
+- **Mini player** — a small window that stays on top (Ctrl+M or the button
+  next to the microphone).
 - **Stats** — listening time, plays by day or month, top songs and artists.
 - **Themes** — Midnight, Neon, Sunset, Ocean and Mono.
 - **Plays with Windows' own Media Foundation engine** (the one behind Edge and
@@ -72,12 +103,12 @@ installed side by side, and each keeps its own library:
   folders, playlists, favorites and play counts from the first AURA
   (matched by file path; the first AURA is not changed).
 
-Not here yet (still in the first AURA): auto-sync and transcribe (they need a
-speech-recognition model), converting to MP3, and BPM/key detection.
+Not here yet: vocal isolation before transcribing (the first AURA's MDX-Net
+model). Whisper listens to the full mix.
 
 ## Keys
 
-Space play/pause · Ctrl+L Now Playing · F11 full-screen lyrics · Ctrl+→ / Ctrl+← next / previous · Ctrl+↑ / Ctrl+↓ volume ·
+Space play/pause · Ctrl+L Now Playing · F11 full-screen lyrics · Ctrl+M mini player · Ctrl+→ / Ctrl+← next / previous · Ctrl+↑ / Ctrl+↓ volume ·
 Ctrl+F search · Alt+← / Alt+→ back / forward · Enter plays the selected song ·
 Delete removes from a playlist or up next.
 
@@ -91,3 +122,5 @@ GitHub builds it on Windows and puts `AURA-Native-Setup.exe` and
 
 To build it yourself on Windows, install the .NET SDK and run
 `dotnet build AuraNative.csproj -c Release`; the app ends up in `bin\Release`.
+The speech part (`aura_whisper.dll`) is built from `native/` with CMake and
+whisper.cpp v1.7.6 — see the release workflow for the exact commands.

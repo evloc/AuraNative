@@ -31,6 +31,21 @@ namespace Aura
         [DataMember] public bool CheckUpdates = true;
         [DataMember] public string RenamePattern = "{artist} - {title}";
         [DataMember] public string ThemeName = "Midnight";
+        [DataMember] public bool Listen = true;           // learn each song's sound in the background (waveform, BPM, key, duplicates)
+        [DataMember] public int Mp3Kbps = 320;
+        [DataMember] public int MiniX = -1, MiniY = -1;
+        [DataMember] public string WhisperModel = "base";
+
+        // settings saved by an older AURA don't have the newer ones: start those at their defaults
+        [OnDeserializing]
+        void Defaults(StreamingContext c)
+        {
+            Folders = new List<string>(); Volume = 80; Queue = new List<long>(); Order = new List<int>();
+            CoverColors = true; Accent = "#1688FF"; WinX = -1; WinY = -1; WinW = 1360; WinH = 860;
+            SongsSort = "added"; SongsDesc = true; AutoLyrics = true; CheckUpdates = true;
+            RenamePattern = "{artist} - {title}"; ThemeName = "Midnight";
+            Listen = true; Mp3Kbps = 320; MiniX = -1; MiniY = -1; WhisperModel = "base";
+        }
 
         public static string Dir;
         static string FilePath => System.IO.Path.Combine(Dir, "settings.json");
@@ -58,6 +73,10 @@ namespace Aura
             if (string.IsNullOrEmpty(Accent)) Accent = "#1688FF";
             if (string.IsNullOrEmpty(SongsSort)) SongsSort = "added";
             Volume = Math.Max(0, Math.Min(100, Volume));
+            if (Array.IndexOf(Converter.Rates, Mp3Kbps) < 0) Mp3Kbps = 320;
+            if (string.IsNullOrEmpty(WhisperModel)) WhisperModel = "base";
+            if (string.IsNullOrEmpty(RenamePattern)) RenamePattern = "{artist} - {title}";
+            if (string.IsNullOrEmpty(ThemeName)) ThemeName = "Midnight";
         }
 
         public void Save()

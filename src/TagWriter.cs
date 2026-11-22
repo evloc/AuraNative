@@ -12,7 +12,9 @@ namespace Aura
         public string Title, Artist, Album, AlbumArtist, Year, Genre, Track;
         public byte[] Picture;          // new front cover (JPEG or PNG)
         public bool RemovePicture;
-        public bool Any => Title != null || Artist != null || Album != null || AlbumArtist != null || Year != null || Genre != null || Track != null || Picture != null || RemovePicture;
+        public string Lyrics;           // plain lyrics or LRC text ("" removes them)
+        public string Words;            // word timings as enhanced LRC (AURA_WORDS)
+        public bool Any => Title != null || Artist != null || Album != null || AlbumArtist != null || Year != null || Genre != null || Track != null || Picture != null || RemovePicture || Lyrics != null || Words != null;
     }
 
     // Writes tags into MP3, FLAC, Ogg Vorbis/Opus, M4A, WAV and AIFF files.
@@ -58,7 +60,9 @@ namespace Aura
                     throw new IOException("the song's length changed (" + before.Duration.ToString("0.0") + " → " + after.Duration.ToString("0.0") + " s)");
                 if (e.Picture != null && !after.HasPicture) throw new IOException("the cover didn't save");
                 if (e.RemovePicture && e.Picture == null && after.HasPicture) throw new IOException("the cover is still there");
-                if (before.HasLyrics && !after.HasLyrics) throw new IOException("the lyrics went missing");
+                if (before.HasLyrics && !after.HasLyrics && e.Lyrics != "") throw new IOException("the lyrics went missing");
+                if (!string.IsNullOrWhiteSpace(e.Lyrics) && !after.HasLyrics) throw new IOException("the lyrics didn't save");
+                if (!string.IsNullOrWhiteSpace(e.Words) && after.WordsRaw.Trim().Length == 0) throw new IOException("the word timings didn't save");
                 Replace(tmp, path);
             }
             catch
@@ -198,6 +202,44 @@ namespace Aura
                     l.Add(0);      // no description
                     l.AddRange(e.Picture);
                     frames.Add(new Frame { Id = "APIC", Data = l.ToArray() });
+                }
+            }
+            Encoding Enc() => version == 4 ? Encoding.UTF8 : Encoding.Unicode;
+            byte EncByte() => (byte)(version == 4 ? 3 : 1);
+            byte[] Str(string v, bool term)
+            {
+                var l = new List<byte>();
+                if (version != 4) { l.Add(0xFF); l.Add(0xFE); }
+                l.AddRange(Enc().GetBytes(v));
+                if (term) { l.Add(0); if (version != 4) l.Add(0); }
+                return l.ToArray();
+            }
+            bool IsTxxx(Frame f, string desc)
+            {
+                if (f.Id != "TXXX" || f.Data.Length < 2) return false;
+                try { var d = Tags.Id3Desc(f.Data); return string.Equals(d, desc, StringComparison.OrdinalIgnoreCase); } catch { return false; }
+            }
+            if (e.Lyrics != null)
+            {
+                frames.RemoveAll(f => f.Id == "USLT" || f.Id == "SYLT" || IsTxxx(f, "LYRICS") || IsTxxx(f, "UNSYNCEDLYRICS"));
+                if (e.Lyrics.Trim().Length > 0)
+                {
+                    var l = new List<byte> { EncByte() };
+                    l.AddRange(Encoding.ASCII.GetBytes("eng"));
+                    l.AddRange(Str("", true));
+                    l.AddRange(Str(e.Lyrics.Trim(), false));
+                    frames.Add(new Frame { Id = "USLT", Data = l.ToArray() });
+                }
+            }
+            if (e.Words != null)
+            {
+                frames.RemoveAll(f => IsTxxx(f, "AURA_WORDS"));
+                if (e.Words.Trim().Length > 0)
+                {
+                    var l = new List<byte> { EncByte() };
+                    l.AddRange(Str("AURA_WORDS", true));
+                    l.AddRange(Str(e.Words.Trim(), false));
+                    frames.Add(new Frame { Id = "TXXX", Data = l.ToArray() });
                 }
             }
             var body = new List<byte>();
@@ -355,6 +397,12 @@ namespace Aura
             Set(e.Year, "DATE", "YEAR");
             Set(e.Genre, "GENRE");
             if (e.Track != null) Set(Clean(e.Track), "TRACKNUMBER");
+            if (e.Lyrics != null)
+            {
+                list.RemoveAll(x => new[] { "LYRICS", "UNSYNCEDLYRICS", "SYNCEDLYRICS", "UNSYNCED LYRICS" }.Any(k => string.Equals(x.key, k, StringComparison.OrdinalIgnoreCase)));
+                if (e.Lyrics.Trim().Length > 0) list.Add(("LYRICS", e.Lyrics.Trim()));
+            }
+            Set(e.Words, "AURA_WORDS");
             if (pictureInComments && (e.Picture != null || e.RemovePicture))
             {
                 list.RemoveAll(x => string.Equals(x.key, "METADATA_BLOCK_PICTURE", StringComparison.OrdinalIgnoreCase) || string.Equals(x.key, "COVERART", StringComparison.OrdinalIgnoreCase));
@@ -648,6 +696,22 @@ namespace Aura
                 ilst.Kids.RemoveAll(a => a.Type == "trkn");
                 var tn = Clean(e.Track);
                 if (tn.Length > 0) { int n = int.Parse(tn); ilst.Kids.Add(DataItem("trkn", 0, new byte[] { 0, 0, (byte)(n >> 8), (byte)n, 0, 0, 0, 0 })); }
+            }
+            SetText("©lyr", e.Lyrics);
+            if (e.Words != null)
+            {
+                ilst.Kids.RemoveAll(a => a.Type == "----" && a.Raw != null && Encoding.UTF8.GetString(a.Raw).Contains("AURA_WORDS"));
+                if (e.Words.Trim().Length > 0)
+                {
+                    var l = new List<byte>();
+                    var mean = Encoding.ASCII.GetBytes("com.apple.iTunes"); var name = Encoding.ASCII.GetBytes("AURA_WORDS");
+                    var val = Encoding.UTF8.GetBytes(e.Words.Trim());
+                    PutBE32(l, 8 + (12 + mean.Length) + (12 + name.Length) + (16 + val.Length)); l.AddRange(Encoding.ASCII.GetBytes("----"));
+                    PutBE32(l, 12 + mean.Length); l.AddRange(Encoding.ASCII.GetBytes("mean")); PutBE32(l, 0); l.AddRange(mean);
+                    PutBE32(l, 12 + name.Length); l.AddRange(Encoding.ASCII.GetBytes("name")); PutBE32(l, 0); l.AddRange(name);
+                    PutBE32(l, 16 + val.Length); l.AddRange(Encoding.ASCII.GetBytes("data")); PutBE32(l, 1); PutBE32(l, 0); l.AddRange(val);
+                    ilst.Kids.Add(new Atom { Type = "----", Raw = l.ToArray() });
+                }
             }
             if (e.Picture != null || e.RemovePicture)
             {

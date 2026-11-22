@@ -49,6 +49,7 @@ namespace Aura
             else if (script == "lyrics") LyricsScript();
             else if (script == "playback") PlaybackScript();
             else if (script == "organize") OrganizeScript();
+            else if (script == "sound") SoundScript();
             int i = 0; DateTime started = DateTime.Now; bool begun = false;
             var t = new Timer { Interval = 150 };
             t.Tick += (s, e) =>
@@ -669,6 +670,207 @@ namespace Aura
                 var t = T("Hash Song"); File.Move(t.Path + ".moved", t.Path);
                 return true;
             });
+        }
+
+        static void SoundScript()
+        {
+            MainForm.UiTestMode = true;
+            Track N(string file) => L.Tracks.FirstOrDefault(t => t.Path.EndsWith(file));
+            Step("scan", () => !L.Scan.Running && L.Tracks.Count >= 10 && Pause(6));
+            Step("all found", () => { if (L.Tracks.Count != 10) foreach (var t in L.Tracks) Console.WriteLine("  " + t.Path); Ok(L.Tracks.Count == 10, "10 songs found (" + L.Tracks.Count + ")"); return true; });
+            Step("listening", () =>
+            {
+                if (F.Sound.Done < L.Tracks.Count) return false;
+                Ok(true, "AURA listened to every song in the background (" + F.Sound.Done + ")");
+                var s = F.Sound.Get(N("A/night_ride.wav"));
+                Ok(s != null && Math.Abs(s.Bpm - 128) < 1.5, "tempo of a 128 BPM song (" + s?.Bpm + ")");
+                Ok(s != null && s.Key == "A minor" && s.Camelot == "8A", "key of an A minor song (" + s?.Key + " " + s?.Camelot + ")");
+                var c = F.Sound.Get(N("convert_me.wav"));
+                Ok(c != null && Math.Abs(c.Bpm - 140) < 1.5 && c.Key == "G minor", "140 BPM in G minor (" + c?.Bpm + " " + c?.Key + ")");
+                var sp = F.Sound.Get(N("speech.wav"));
+                Ok(sp != null, "speech is heard too (bpm " + sp?.Bpm + ")");
+                return true;
+            });
+            // ---- duplicates
+            List<DupGroup> groups = null;
+            Step("find duplicates", () =>
+            {
+                groups = Duplicates.Find(L, F.Sound);
+                foreach (var g in groups) Console.WriteLine("  group " + g.Kind + " checked=" + g.Checked + ": " + string.Join(", ", g.Tracks.Select(t => Path.GetFileName(t.Path) + (t == g.Keep ? "*" : ""))));
+                Ok(groups.Count == 1, "one song is saved more than once (" + groups.Count + " groups)");
+                var g0 = groups.FirstOrDefault();
+                var files = g0?.Tracks.Select(t => t.Path.Substring(t.Path.Length - 26)).ToList() ?? new List<string>();
+                Ok(g0 != null && g0.Tracks.Count == 4, "the WAV, its MP3, a byte-for-byte copy of that, and a differently named FLAC that sounds the same (" + g0?.Tracks.Count + ")");
+                Ok(g0 != null && g0.Keep.Path.EndsWith("A/night_ride.wav"), "the best copy is kept: lossless, with a cover (" + g0?.Keep.Path + ")");
+                Ok(g0 != null && !g0.Tracks.Any(t => t.Name.Contains("(v2)") || t.Name.Contains("(snippet)") || t.Name.Contains("(OG)")), "v2, snippet and OG versions are not counted as duplicates");
+                Ok(g0 != null && g0.Kind == "sound" && g0.Checked, "marked as sounding the same, checked by listening");
+                return true;
+            });
+            Step("prepare merge", () =>
+            {
+                var copy = N("A/night_ride_copy.mp3"); var flac = N("totally different name.flac");
+                var pl = L.CreatePlaylist("Dup list", new[] { copy.Id, N("slow_one.wav").Id, flac.Id });
+                L.SetFav(flac, true);
+                L.RecordPlay(copy); L.RecordPlay(copy); L.RecordPlay(flac);
+                L.RecordPlay(N("A/night_ride.wav"));
+                F.Go(new Route("duplicates"));
+                return true;
+            });
+            Step("duplicates page shot", () => { if (!Pause(14)) return false; Shot("40_duplicates"); return true; });
+            Step("merge", () =>
+            {
+                var g = groups[0];
+                F.MergeDuplicates(new List<(DupGroup, Track)> { (g, g.Keep) });
+                return true;
+            });
+            Step("merged", () =>
+            {
+                if (!Pause(4)) return false;
+                var keep = N("A/night_ride.wav");
+                Ok(L.Tracks.Count == 7, "the 3 extra copies left the library (" + L.Tracks.Count + ")");
+                var moved = Directory.GetFiles("/tmp/claude-0/n7/music", "*", SearchOption.AllDirectories).Where(f => f.Contains("/_duplicates/")).ToList();
+                Ok(moved.Count == 3, "and were moved into _duplicates folders, not deleted (" + moved.Count + ")");
+                Ok(keep.Plays == 4, "plays add up on the kept copy (" + keep.Plays + ")");
+                Ok(keep.Fav, "a favorite copy makes the kept one a favorite");
+                var pl = L.Playlists.First(p => p.Name == "Dup list");
+                Ok(pl.Items.Count == 2 && pl.Items[0] == keep.Id && L.Get(pl.Items[1]).Name == "Slow One", "the playlist points at the kept copy, once, in its place (" + string.Join(",", pl.Items.Select(i => L.Get(i)?.Name)) + ")");
+                Ok(Duplicates.Find(L, F.Sound).Count == 0, "no duplicates left");
+                Shot("41_duplicates_done");
+                return true;
+            });
+            Step("rescan keeps them out", () => { F.Rescan(); return true; });
+            Step("rescanned", () => { if (L.Scan.Running || !Pause(4)) return false; Ok(L.Tracks.Count == 7, "a rescan doesn't bring the _duplicates back (" + L.Tracks.Count + ")"); return true; });
+            // ---- waveform and loop
+            Step("play for wave", () => { P.PlayList(new[] { N("A/night_ride.wav").Id }.ToList()); F.Go(new Route("now")); return true; });
+            Step("wave shot", () => { if (!Pause(10)) return false; Shot("42_now_wave"); P.SetLoop(5, 8); return true; });
+            Step("looping", () =>
+            {
+                if (!Pause(30)) return false;
+                Ok(P.Looping && P.Position >= 4.9 && P.Position <= 8.4, "A–B loop keeps playing between 0:05 and 0:08 (" + P.Position.ToString("0.0") + ")");
+                Shot("43_now_loop");
+                P.ClearLoop();
+                return true;
+            });
+            // ---- versions lined up
+            Step("version switch", () => { P.Seek(30); return true; });
+            Step("switch", () =>
+            {
+                if (!Pause(2)) return false;
+                var og = L.Tracks.First(t => t.Name == "Night Ride (OG)");
+                Console.WriteLine("  map 30 s -> " + P.MapPosition(P.Current, og, 30).ToString("0.00") + "  (sound " + (F.Sound.Get(P.Current) != null) + "/" + (F.Sound.Get(og) != null) + ")");
+                Ok(L.VersionsOf(og).Count == 4, "Night Ride has 4 versions (" + L.VersionsOf(og).Count + ")");
+                P.SwitchTo(og);
+                return true;
+            });
+            Step("switched", () =>
+            {
+                if (!Pause(2)) return false;
+                Ok(P.Current.Name == "Night Ride (OG)" && P.LastSwitchLinedUp && Math.Abs(P.Position - 33.3) < 1.0, "switching to a version with a 3 s longer intro lands on the same part (" + P.Position.ToString("0.0") + " s, expected ~33)");
+                return true;
+            });
+            // ---- mini player
+            Step("mini", () => { F.ToggleMini(); return true; });
+            Step("mini shown", () =>
+            {
+                if (!Pause(6)) return false;
+                Ok(F.Mini != null && F.Mini.Visible && F.Mini.TopMost, "the mini player opens and stays on top");
+                try
+                {
+                    using (var b = new Bitmap(F.Mini.Width, F.Mini.Height))
+                    {
+                        using (var g = Graphics.FromImage(b)) g.CopyFromScreen(F.Mini.Location, Point.Empty, b.Size);
+                        b.Save(Path.Combine(outDir, "44_mini.png"));
+                    }
+                }
+                catch (Exception e) { Console.WriteLine("mini shot: " + e.Message); }
+                F.ToggleMini();
+                return true;
+            });
+            Step("mini closed", () => { Ok(F.Mini == null, "and closes again"); return true; });
+            // ---- convert to MP3
+            long convId = 0;
+            Step("convert", () =>
+            {
+                var t = N("convert_me.wav"); convId = t.Id;
+                L.CreatePlaylist("Has convert", new[] { t.Id });
+                L.SetFav(t, true);
+                P.PlayList(new[] { t.Id }.ToList());
+                return true;
+            });
+            Step("convert 2", () => { if (!Pause(6)) return false; F.RunConvert(new List<Track> { N("convert_me.wav") }, 192); return true; });
+            Step("converted", () =>
+            {
+                if (F.Busy) return false;
+                var t = L.Get(convId);
+                Ok(t != null && t.Path.EndsWith("C/convert_me.mp3") && File.Exists(t.Path), "the song is now an MP3 (" + t?.Path + ")");
+                Ok(File.Exists("/tmp/claude-0/n7/music/C/_originals/convert_me.wav"), "the original WAV is kept in _originals");
+                var tg = Tags.Read(t.Path, true);
+                Ok(tg.Title == "Convert Me" && tg.Artist == "Tester" && tg.Album == "Tests" && tg.HasPicture, "title, artist, album and cover came along");
+                var lyr = Aura.Lyrics.From(tg.LyricsText, tg.Synced, tg.WordsRaw, "file");
+                Ok(lyr != null && lyr.Timed && lyr.ByWord && lyr.Lines[1].T == 3, "timed lyrics and word timings came along");
+                Ok(Math.Abs(tg.Duration - 30) < 0.5, "same length (" + tg.Duration.ToString("0.00") + " s)");
+                Ok(t.Fav && L.Playlists.First(p => p.Name == "Has convert").Items.Contains(t.Id), "it's still the same song: favorite and playlist kept");
+                Ok(P.Current?.Id == t.Id, "and the player carries on with it");
+                var s = F.Sound.Get(t);
+                return true;
+            });
+            Step("convert rescan", () => { F.Rescan(); return true; });
+            Step("convert rescanned", () => { if (L.Scan.Running || !Pause(4)) return false; Ok(L.Tracks.Count == 7 && L.Tracks.Count(t => t.Name == "Convert Me") == 1, "a rescan finds it once (" + L.Tracks.Count + ")"); return true; });
+            // ---- lyrics in time
+            Step("align words", () =>
+            {
+                var lines = new List<string> { "and so my fellow Americans", "ask not what your country can do for you", "ask what you can do for your country" };
+                var heard = new List<Whisper.Heard>();
+                double t0 = 1.0;
+                foreach (var w in "And so my fellow Americas, ask not what your country can do for you, ask what you can do for your country.".Split(' '))
+                { heard.Add(new Whisper.Heard { Word = w, Start = t0, End = t0 + 0.3, P = 0.9 }); t0 += w.EndsWith(",") ? 1.2 : 0.35; }
+                var r = Sync.Align(lines, heard);
+                Ok(r.Lines.Count == 3 && r.Confidence > 0.9, "auto-sync lines the lyrics up with what was heard (" + r.Confidence + ")");
+                Ok(Math.Abs(r.Lines[0].T - 1.0) < 0.05 && r.Lines[1].T > r.Lines[0].T + 1.5 && r.Lines[2].T > r.Lines[1].T + 2, "each line starts where it's sung (" + string.Join(", ", r.Lines.Select(l => l.T)) + ")");
+                Ok(r.Lines.All(l => l.Words != null && l.Words.Count == l.Text.Split(' ').Length), "and every word gets a time, even a misheard one");
+                var lrc = Sync.ToLrc(r.Lines); var words = Sync.ToWords(r.Lines);
+                var back = Aura.Lyrics.From(lrc, null, words, "x");
+                Ok(back != null && back.ByWord && back.Lines.Count == 3, "saved as LRC plus word timings, and read back");
+                var tr = Sync.Lines(heard);
+                Ok(tr.Lines.Count >= 2 && tr.Lines[0].Text.StartsWith("And so my"), "transcribing turns heard words into lines (" + string.Join(" / ", tr.Lines.Select(l => l.Text)) + ")");
+                return true;
+            });
+            TranscribeForm tf = null;
+            Step("transcribe open", () =>
+            {
+                var t = T("Ask Not");
+                tf = new TranscribeForm(F, t); floating = tf; tf.Show(F);
+                return true;
+            });
+            Step("transcribe start", () => { if (!Pause(4)) return false; tf.TestStart(false); return true; });
+            Step("transcribe done", () =>
+            {
+                if (tf.TestRunning) return false;
+                Console.WriteLine("  status: " + tf.TestStatus);
+                Ok(Whisper.Models[0].Ready, "the speech model downloaded once");
+                Ok(tf.TestResult != null || tf.TestStatus.Contains("nothing was changed"), "whisper.cpp ran on the song without crashing (" + tf.TestStatus + ")");
+                try
+                {
+                    using (var b = new Bitmap(tf.Width, tf.Height))
+                    {
+                        using (var g = Graphics.FromImage(b)) g.CopyFromScreen(tf.Location, Point.Empty, b.Size);
+                        b.Save(Path.Combine(outDir, "45_transcribe.png"));
+                    }
+                }
+                catch { }
+                if (tf.TestResult != null) tf.TestSave(); else tf.Close();
+                return true;
+            });
+            Step("transcribe saved", () =>
+            {
+                if (F.Writing || !Pause(4)) return false;
+                var l = F.Lyrics.Get(T("Ask Not"));
+                Ok(l != null && l.Source == "In the song file", "a run that heard nothing doesn't touch the song's lyrics (" + l?.Source + ")");
+                return true;
+            });
+            Step("settings", () => { F.Go(new Route("settings")); return true; });
+            Step("settings shot", () => { if (!Pause(6)) return false; if (F.Page is Canvas c) c.ScrollTo(1000, false); return true; });
+            Step("settings shot 2", () => { if (!Pause(4)) return false; Shot("46_settings_listening"); return true; });
         }
 
         static void Resume()

@@ -20,6 +20,11 @@ namespace Aura
         Player Player { get; }
         Settings Prefs { get; }
         LyricsStore Lyrics { get; }
+        SoundStore Sound { get; }
+        void ConvertToMp3(IList<Track> tracks);
+        void MergeDuplicates(IList<(DupGroup g, Track keep)> groups);
+        void ToggleMini();
+        void Transcribe(Track t);
         void FullScreenLyrics();
         void FindLyrics(Track t);
         void EditInfo(IList<Track> tracks);

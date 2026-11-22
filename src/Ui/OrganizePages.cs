@@ -110,7 +110,7 @@ namespace Aura
                     float w = Math.Min(Theme.F(220), Theme.Measure(g, label, f) + Theme.F(24));
                     if (cx + w > r.Right - Theme.F(10)) break;
                     var cr = new RectangleF(cx, r.Y + (r.Height - Theme.F(28)) / 2, w, Theme.F(28));
-                    bool cur = shell.Player.Current == v, hot = Hover(id + ":" + v.Id);
+                    bool cur = shell.Player.Current?.Id == v.Id, hot = Hover(id + ":" + v.Id);
                     Theme.Fill(g, cur ? Theme.Alpha(Theme.Accent, 90) : hot ? Theme.Surface2 : Theme.Alpha(Theme.Surface2, 160), cr, cr.Height / 2);
                     Theme.Write(g, label, f, cur ? Theme.Text : Theme.Sub, new RectangleF(cr.X + Theme.F(12), cr.Y, cr.Width - Theme.F(20), cr.Height));
                     var vv = v; var ids = grp.Select(x => x.Id).ToList();

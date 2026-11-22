@@ -39,6 +39,9 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription:
 [Files]
 Source: "bin\Release\AURA Native.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "bin\Release\AURA Native.exe.config"; DestDir: "{app}"; Flags: ignoreversion
+; speech recognition (whisper.cpp), for timing and writing down lyrics
+Source: "bin\Release\aura_whisper.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "bin\Release\aura_whisper_basic.dll"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{autoprograms}\AURA Native"; Filename: "{app}\AURA Native.exe"

@@ -119,7 +119,7 @@ namespace Aura
         public bool HoverIdIs(string id) => HoverId == id;
         protected bool HoverStarts(string prefix) => HoverId != null && HoverId.StartsWith(prefix);
 
-        Hit HitAt(Point p)
+        protected Hit HitAt(Point p)
         {
             for (int i = hits.Count - 1; i >= 0; i--)
             {
@@ -250,6 +250,13 @@ namespace Aura
 
         // ---------- common pieces ----------
         // a rounded button with text (and an optional icon); primary = filled with the accent color
+        protected float PillWidth(Graphics g, string text, string icon = null)
+        {
+            var f = Theme.Font(13.5f, FontStyle.Regular, true);
+            float pad = Theme.F(18), ic = icon != null ? Theme.F(18) + Theme.F(8) : 0;
+            return Theme.Measure(g, text, f) + pad * 2 + ic + Theme.F(4);
+        }
+
         protected RectangleF Pill(Graphics g, string id, float x, float y, string text, Action click, bool primary = false, string icon = null, float h = 36, string tip = null, bool fixedPos = false)
         {
             var f = Theme.Font(13.5f, FontStyle.Regular, true);

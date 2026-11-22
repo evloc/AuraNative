@@ -79,13 +79,16 @@ namespace Aura
                 return;
             }
             DrawBackdrop(g, t);
+            float strip = Theme.F(104);
+            DrawWave(g, t, new RectangleF(Theme.F(44), Height - strip + Theme.F(14), Width - Theme.F(88), strip - Theme.F(30)));
+            float H = Height - strip;
             bool wide = Width >= Theme.F(860);
             float pad = Theme.F(44);
             float colW = wide ? Math.Min(Theme.F(400), Width * 0.36f) : Math.Min(Theme.F(170), Width * 0.3f);
             bool hasVersions = shell.Lib.VersionsOf(t).Count > 1;
             float infoH = Theme.F(170) + (hasVersions ? Theme.F(84) : 0);
-            float art = wide ? Math.Max(Theme.F(160), Math.Min(colW, Height - infoH - Theme.F(56))) : colW;
-            float top = wide ? Math.Max(Theme.F(28), (Height - art - infoH) / 2) : Theme.F(28);
+            float art = wide ? Math.Max(Theme.F(160), Math.Min(colW, H - infoH - Theme.F(56))) : colW;
+            float top = wide ? Math.Max(Theme.F(28), (H - art - infoH) / 2) : Theme.F(28);
             var ar = new RectangleF(pad, top, art, art);
             for (int i = 4; i >= 1; i--) Theme.Fill(g, Theme.Alpha(Color.Black, 28), new RectangleF(ar.X - i * 3, ar.Y + i * 4, ar.Width + i * 6, ar.Height + i * 4), Theme.F(14) + i * 3);
             var img = Art.Get(t);
@@ -114,7 +117,9 @@ namespace Aura
             bx += Theme.F(48);
             var l = pane.Lyrics;
             if (l != null) bx = Pill(g, "full", bx, ty + Theme.F(1), "Full screen", shell.FullScreenLyrics, false, "expand", 36, "Full-screen lyrics (F11)").Right + Theme.F(8);
-            Pill(g, "find", bx, ty + Theme.F(1), l == null ? "Find lyrics" : "Other lyrics", () => shell.FindLyrics(t), false, "search", 36);
+            bx = Pill(g, "find", bx, ty + Theme.F(1), l == null ? "Find lyrics" : "Other lyrics", () => shell.FindLyrics(t), false, "search", 36).Right + Theme.F(8);
+            if (l == null || !l.ByWord)
+                IconButton(g, "sync", new RectangleF(bx, ty, Theme.F(38), Theme.F(38)), "wave", () => shell.Transcribe(t), l == null ? "Write the lyrics down by listening" : "Time these lyrics to the song (auto-sync)", circleBg: true);
 
             // other versions of this song: switch without losing your place
             var versions = shell.Lib.VersionsOf(t);
@@ -128,20 +133,24 @@ namespace Aura
                     var f = Theme.Font(12.5f);
                     float w = Math.Min(tw, Theme.Measure(g, v.Name, f) + Theme.F(26));
                     if (vx + w > tx + tw) { vx = tx; vy += Theme.F(36); }
-                    if (vy > Height - Theme.F(40)) break;
+                    if (vy > H - Theme.F(40)) break;
                     var cr = new RectangleF(vx, vy, w, Theme.F(30));
-                    bool cur = v == t, hot = Hover("ver:" + v.Id);
+                    bool cur = v.Id == t.Id, hot = Hover("ver:" + v.Id);
                     Theme.Fill(g, cur ? Theme.Alpha(Theme.Accent, 110) : hot ? Theme.Surface2 : Theme.Alpha(Theme.Surface, 200), cr, cr.Height / 2);
                     Theme.Write(g, v.Name, f, cur ? Theme.Text : Theme.Sub, new RectangleF(cr.X + Theme.F(13), cr.Y, cr.Width - Theme.F(20), cr.Height));
                     var vv = v;
-                    if (!cur) AddHit("ver:" + v.Id, cr, () => shell.Player.SwitchTo(vv), "Switch to this version at the same point");
+                    if (!cur) AddHit("ver:" + v.Id, cr, () =>
+                    {
+                        shell.Player.SwitchTo(vv);
+                        if (!shell.Player.LastSwitchLinedUp && shell.Sound.Get(vv) == null) shell.Toast("Switched at the same time — AURA hasn't listened to this version yet, so it couldn't line them up");
+                    }, shell.Sound.Get(vv) != null && shell.Sound.Get(t) != null ? "Switch to this version at the same part of the song" : "Switch to this version at the same time");
                     vx += w + Theme.F(8);
                 }
             }
 
             // lyrics
-            lyricsArea = wide ? new RectangleF(pad + colW + Theme.F(70), Theme.F(70), Width - pad - colW - Theme.F(70) - pad, Height - Theme.F(100))
-                              : new RectangleF(pad, ty + Theme.F(70), Width - pad * 2, Height - ty - Theme.F(90));
+            lyricsArea = wide ? new RectangleF(pad + colW + Theme.F(70), Theme.F(70), Width - pad - colW - Theme.F(70) - pad, H - Theme.F(80))
+                              : new RectangleF(pad, ty + Theme.F(70), Width - pad * 2, H - ty - Theme.F(80));
             float hy = lyricsArea.Y - Theme.F(40);
             if (l == null)
             {
@@ -166,6 +175,86 @@ namespace Aura
             }
             pane.Stage = false;
             pane.Draw(g, lyricsArea, shell.Player.Position, this, sec => shell.Player.Seek(sec));
+        }
+
+        public void SoundReady(long id) { if (id == shell.Player.Current?.Id) Invalidate(); }
+
+        // ---------- the song's waveform: click to jump, drag to loop a part ----------
+        float dragFrom = -1, dragTo = -1;
+        void DrawWave(Graphics g, Track t, RectangleF r)
+        {
+            var P = shell.Player;
+            var snd = shell.Sound.Get(t);
+            double dur = P.Duration > 0 ? P.Duration : t.Duration;
+            // a line above: tempo, key, loop buttons
+            float ly = r.Y;
+            string info = snd == null ? (shell.Sound.Has(t.Id) ? "AURA couldn't read this song's sound" : "AURA is listening to this song…")
+                : (snd.Bpm > 0 ? snd.Bpm.ToString("0") + " BPM" : "No steady beat") + (snd.Key.Length > 0 ? "  ·  " + snd.Key + " (" + snd.Camelot + ")" : "");
+            Theme.Write(g, info, Theme.Font(12.5f), Theme.Sub, new RectangleF(r.X, ly, r.Width * 0.5f, Theme.F(22)));
+            float bx = r.Right;
+            string loopTip = P.Looping ? "Looping " + Theme.Time(P.LoopA) + " – " + Theme.Time(P.LoopB) : "Drag across the waveform to loop a part";
+            if (P.Looping)
+            {
+                bx -= PillWidth(g, "Stop looping", "close"); Pill(g, "loopoff", bx, ly - Theme.F(3), "Stop looping", P.ClearLoop, true, "close", 26, loopTip);
+                bx -= Theme.F(8);
+            }
+            bx -= PillWidth(g, "B");
+            Pill(g, "loopb", bx, ly - Theme.F(3), "B", () => P.SetLoop(P.LoopA >= 0 ? P.LoopA : 0, P.Position), P.LoopB >= 0, null, 26, "Loop ends here (" + Theme.Time(P.Position) + ")");
+            bx -= Theme.F(6);
+            bx -= PillWidth(g, "A");
+            Pill(g, "loopa", bx, ly - Theme.F(3), "A", () => P.SetLoop(P.Position, P.LoopB > P.Position ? P.LoopB : Math.Min(dur, P.Position + 8)), P.LoopA >= 0, null, 26, "Loop starts here (" + Theme.Time(P.Position) + ")");
+            Icons.Draw(g, "loop", new RectangleF(bx - Theme.F(26), ly, Theme.F(18), Theme.F(18)), P.Looping ? Theme.AccentText : Theme.Faint);
+            // the wave
+            var wr = new RectangleF(r.X, ly + Theme.F(28), r.Width, r.Height - Theme.F(28));
+            double pos = P.Position;
+            float k = dur > 0 ? (float)(pos / dur) : 0;
+            if (P.Looping && dur > 0)
+            {
+                float a = wr.X + (float)(P.LoopA / dur) * wr.Width, b = wr.X + (float)(P.LoopB / dur) * wr.Width;
+                Theme.Fill(g, Theme.Alpha(Theme.Accent, 50), new RectangleF(a, wr.Y - Theme.F(2), b - a, wr.Height + Theme.F(4)), Theme.F(4));
+            }
+            if (dragFrom >= 0 && dragTo >= 0 && Math.Abs(dragTo - dragFrom) > 0.004f)
+            {
+                float a = wr.X + Math.Min(dragFrom, dragTo) * wr.Width, b = wr.X + Math.Max(dragFrom, dragTo) * wr.Width;
+                Theme.Fill(g, Theme.Alpha(Color.White, 40), new RectangleF(a, wr.Y - Theme.F(2), b - a, wr.Height + Theme.F(4)), Theme.F(4));
+            }
+            float bar = Theme.F(3), gap = Theme.F(2);
+            int n = Math.Max(10, (int)(wr.Width / (bar + gap)));
+            var peaks = snd?.Peaks;
+            float mid = wr.Y + wr.Height / 2;
+            using (var played = new SolidBrush(Theme.Mix(Theme.Accent, Color.White, 0.15f)))
+            using (var rest = new SolidBrush(Theme.Alpha(Theme.Text, 70)))
+                for (int i = 0; i < n; i++)
+                {
+                    float v;
+                    if (peaks != null && peaks.Length > 0)
+                    {
+                        // the loudest point in this bar's part of the song (peaks cover the length that was heard)
+                        double coverage = snd.Length > 0 && dur > 0 ? Math.Min(1, (peaks.Length / SongSound.Fps) / dur) : 1;
+                        int from = (int)((double)i / n / coverage * peaks.Length), to = (int)((double)(i + 1) / n / coverage * peaks.Length);
+                        int mx = 0; for (int j = from; j < Math.Max(from + 1, to) && j < peaks.Length; j++) if (peaks[j] > mx) mx = peaks[j];
+                        v = mx / 255f;
+                    }
+                    else v = 0.12f;
+                    float hgt = Math.Max(Theme.F(2), v * wr.Height);
+                    float x = wr.X + i * (bar + gap);
+                    g.FillRectangle((float)i / n < k ? played : rest, x, mid - hgt / 2, bar, hgt);
+                }
+            // where you are
+            using (var pen = new Pen(Theme.Text, Theme.F(1.5f))) g.DrawLine(pen, wr.X + k * wr.Width, wr.Y - Theme.F(3), wr.X + k * wr.Width, wr.Bottom + Theme.F(3));
+            var hit = AddHit("wave", wr, null, loopTip);
+            hit.Cursor = Cursors.Hand;
+            hit.DragTo = p => { float f = Math.Max(0, Math.Min(1, (p.X - wr.X) / wr.Width)); if (dragFrom < 0) dragFrom = f; dragTo = f; Invalidate(); };
+            hit.DragEnd = () =>
+            {
+                if (dragFrom >= 0 && dur > 0)
+                {
+                    if (Math.Abs(dragTo - dragFrom) * wr.Width < Theme.F(6)) P.Seek(dragTo * dur);
+                    else P.SetLoop(Math.Min(dragFrom, dragTo) * dur, Math.Max(dragFrom, dragTo) * dur);
+                }
+                dragFrom = dragTo = -1;
+                Invalidate();
+            };
         }
 
         protected override void OnMouseWheel(MouseEventArgs e)

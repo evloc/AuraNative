@@ -195,7 +195,7 @@ CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT)";
                     foreach (var d in dirs)
                     {
                         var name = System.IO.Path.GetFileName(d);
-                        if (name.StartsWith(".") || name.Equals("_originals", StringComparison.OrdinalIgnoreCase) || name.Equals("$RECYCLE.BIN", StringComparison.OrdinalIgnoreCase)) continue;
+                        if (name.StartsWith(".") || name.Equals("_originals", StringComparison.OrdinalIgnoreCase) || name.Equals("_duplicates", StringComparison.OrdinalIgnoreCase) || name.Equals("$RECYCLE.BIN", StringComparison.OrdinalIgnoreCase)) continue;
                         try { if ((File.GetAttributes(d) & FileAttributes.ReparsePoint) != 0) continue; } catch { continue; }
                         stack.Push(d);
                     }

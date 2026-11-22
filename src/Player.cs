@@ -166,6 +166,7 @@ namespace Aura
                 if (failsInRow < Math.Min(Order.Count, 25)) { Advance(true); return; }
                 failsInRow = 0; StopAll(); return;
             }
+            if (Current != t) { LoopA = LoopB = -1; LoopChanged?.Invoke(); }
             Current = t;
             listened = 0; lastPos = 0; counted = false;
             if (play) { audio.Play(); State = PlayState.Playing; }
@@ -303,6 +304,7 @@ namespace Aura
                 Advance(true);
                 return;
             }
+            if (State == PlayState.Playing && Looping && audio.Position >= LoopB) { audio.Position = LoopA; lastPos = LoopA; }
             if (State == PlayState.Playing)
             {
                 double p = audio.Position;
@@ -367,15 +369,49 @@ namespace Aura
         }
 
         // play another version of the current song from the same point
+        // the same moment in another version, lined up by how they sound (set by the window); -1 when unknown
+        public Func<Track, Track, double, double> MapPosition;
+        public bool LastSwitchLinedUp { get; private set; }
+
         public void SwitchTo(Track t)
         {
             if (Current == null || t == null) { if (t != null) PlayList(new List<long> { t.Id }); return; }
+            var from = Current;
             double pos = audio.Position;
-            bool playing = State == PlayState.Playing || State == PlayState.Paused;
+            double mapped = -1;
+            try { mapped = MapPosition?.Invoke(from, t, pos) ?? -1; } catch (Exception e) { App.Log("lining up versions: " + e.Message); }
+            LastSwitchLinedUp = mapped >= 0;
+            if (mapped >= 0) pos = mapped;
             Queue[Order[Pos]] = t.Id;
             Start(true);
-            if (Current == t && pos > 1 && pos < t.Duration - 2) audio.Position = pos;
+            if (Current == t && pos > 1 && pos < t.Duration - 2) { audio.Position = pos; lastPos = pos; }
             QueueChanged?.Invoke();
+        }
+
+        // after the library is read again: the song that's playing is the new copy of itself
+        public void Relink() { if (Current != null && lib.Get(Current.Id) is Track t && t != Current) Current = t; }
+
+        // ---------- A-B loop ----------
+        public double LoopA { get; private set; } = -1;
+        public double LoopB { get; private set; } = -1;
+        public bool Looping => LoopA >= 0 && LoopB > LoopA;
+        public event Action LoopChanged;
+        public void SetLoop(double a, double b)
+        {
+            if (a >= 0 && b >= 0 && b < a) { var x = a; a = b; b = x; }
+            if (a >= 0 && b >= 0 && b - a < 0.5) b = a + 0.5;
+            LoopA = a; LoopB = b;
+            LoopChanged?.Invoke();
+            if (Looping && (Position < LoopA || Position > LoopB)) Seek(LoopA);
+        }
+        public void ClearLoop() { if (LoopA < 0 && LoopB < 0) return; LoopA = LoopB = -1; LoopChanged?.Invoke(); }
+
+        // a song that was merged into another: the queue points at the one that's kept
+        public void Replace(long from, long to)
+        {
+            bool any = false;
+            for (int i = 0; i < Queue.Count; i++) if (Queue[i] == from) { Queue[i] = to; any = true; }
+            if (any) QueueChanged?.Invoke();
         }
 
         // while a song's file is being changed, the player lets go of it, then picks up where it was
@@ -394,7 +430,7 @@ namespace Aura
 
         public void Restore(Held h)
         {
-            if (h == null || Current != h.Track) return;
+            if (h == null || Current == null || Current.Id != h.Track.Id) return;
             var t = lib.Get(h.Track.Id) ?? h.Track;
             Current = t;
             if (!LoadWith(t, h.Playing)) { Problem?.Invoke("Couldn't open " + t.Name + " again"); return; }

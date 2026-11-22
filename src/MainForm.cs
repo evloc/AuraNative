@@ -8,7 +8,7 @@ using System.Windows.Forms;
 
 namespace Aura
 {
-    sealed class MainForm : Form, IShell
+    sealed partial class MainForm : Form, IShell
     {
         public Library Lib { get; }
         public Player Player { get; }
@@ -83,6 +83,7 @@ namespace Aura
             rescanTimer = new Timer { Interval = 4000 };
             rescanTimer.Tick += (s, e) => { rescanTimer.Stop(); Rescan(); };
 
+            InitMore();
             Go(new Route("home"));
         }
 
@@ -134,6 +135,7 @@ namespace Aura
 
         protected override void WndProc(ref Message m)
         {
+            if (TaskbarMessage(ref m)) return;
             if (m.Msg == 0x0312)        // WM_HOTKEY
             {
                 switch (m.WParam.ToInt32())
@@ -174,6 +176,7 @@ namespace Aura
         {
             SaveState();
             if (App.IsWindows) for (int i = 1; i <= 4; i++) try { Win.UnregisterHotKey(Handle, i); } catch { }
+            CloseMore();
             foreach (var w in watchers) w.Dispose();
             base.OnFormClosing(e);
         }
@@ -196,6 +199,7 @@ namespace Aura
                 case Keys.Control | Keys.Up: Player.Volume += 5; Bar.Invalidate(); return true;
                 case Keys.Control | Keys.Down: Player.Volume -= 5; Bar.Invalidate(); return true;
                 case Keys.F11: FullScreenLyrics(); return true;
+                case Keys.Control | Keys.M: ToggleMini(); return true;
                 case Keys.Control | Keys.L: if (Current?.Kind == "now") Back(); else Go(new Route("now")); return true;
                 case Keys.Alt | Keys.Left: Back(); return true;
                 case Keys.Alt | Keys.Right: Forward(); return true;
@@ -253,6 +257,7 @@ namespace Aura
                 case "now": page = new NowPlayingPage(this); break;
                 case "missing" when r.Key.Length == 0: page = new MissingPage(this); break;
                 case "versions": page = new VersionsPage(this); break;
+                case "duplicates": page = new DuplicatesPage(this); break;
                 case "stats": page = new StatsPage(this); break;
                 case "artists": case "albums": page = new GridPage(this, r); break;
                 case "settings":
@@ -291,6 +296,7 @@ namespace Aura
                 case SettingsPage sp: sp.Reload(); break;
                 case MissingPage mp: mp.Reload(); break;
                 case VersionsPage vp: vp.Reload(); break;
+                case DuplicatesPage dp: dp.Reload(); break;
                 case StatsPage stp: stp.Reload(); break;
                 case NowPlayingPage np: np.Reload(); break;
             }
@@ -298,6 +304,8 @@ namespace Aura
 
         void OnLibraryChanged()
         {
+            Player.Relink();
+            Sound.LibraryChanged();
             ReloadPage();
             Side.Invalidate(); Bar.Invalidate(); Head.Invalidate();
         }
@@ -560,6 +568,13 @@ namespace Aura
             if (wrong.Count > 0)
                 more.DropDownItems.Add(Menus.Item(wrong.Count == 1 ? "Fix file type (it's really " + AudioKind.Name(wrong[0].k) + ")" : "Fix file type for " + wrong.Count + " songs", () => FixTypes(wrong)));
             if (one != null) more.DropDownItems.Add(Menus.Item("Find lyrics…", () => FindLyrics(one)));
+            var convertible = tracks.Where(Converter.CanConvert).ToList();
+            if (convertible.Count > 0) more.DropDownItems.Add(Menus.Item(convertible.Count == 1 ? "Convert to MP3…" : "Convert " + convertible.Count + " songs to MP3…", () => ConvertToMp3(convertible)));
+            if (one != null)
+            {
+                more.DropDownItems.Add(new ToolStripSeparator());
+                more.DropDownItems.Add(Menus.Item("Write lyrics in time (auto-sync / transcribe)…", () => Transcribe(one)));
+            }
             m.Items.Add(more);
             if (one != null)
             {
@@ -651,6 +666,7 @@ namespace Aura
             if (Prefs.Folders.Count > 0) Rescan();
             else { firstScan = false; AfterFirstScan(); }
             Lyrics.StartAuto(() => Prefs.AutoLyrics);
+            StartMore();
             if (Prefs.CheckUpdates && Environment.GetEnvironmentVariable("AURA_NO_UPDATE_CHECK") == null)
             {
                 var once = new Timer { Interval = 6000 };

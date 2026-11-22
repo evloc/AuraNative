@@ -17,7 +17,8 @@ static class TagDump {
     foreach (var a in args.Skip(1)) {
       int eq = a.IndexOf('='); string k = eq < 0 ? a : a.Substring(0, eq), v = eq < 0 ? "" : a.Substring(eq + 1);
       switch (k) { case "title": e.Title = v; break; case "artist": e.Artist = v; break; case "album": e.Album = v; break; case "albumartist": e.AlbumArtist = v; break;
-        case "year": e.Year = v; break; case "genre": e.Genre = v; break; case "track": e.Track = v; break; case "cover": e.Picture = File.ReadAllBytes(v); break; case "nocover": e.RemovePicture = true; break; }
+        case "year": e.Year = v; break; case "genre": e.Genre = v; break; case "track": e.Track = v; break; case "cover": e.Picture = File.ReadAllBytes(v); break; case "nocover": e.RemovePicture = true; break;
+        case "lyrics": e.Lyrics = v.Replace("\\n", "\n"); break; case "words": e.Words = v.Replace("\\n", "\n"); break; }
     }
     try { TagWriter.Write(args[0], e); Console.WriteLine("OK " + Path.GetFileName(args[0])); return 0; }
     catch (Exception x) { Console.WriteLine("ERR " + Path.GetFileName(args[0]) + ": " + x.Message); return 1; }
@@ -34,6 +35,27 @@ static class TagDump {
         l.Lines?.Count ?? 0, l.Timed, l.Lines?.Count(x => x.Words != null) ?? 0, l.Lines?.FirstOrDefault()?.Text ?? l.Plain.Split('\n')[0],
         l.Lines?.FirstOrDefault()?.T ?? -1, w == null ? "" : string.Join("|", w.Words.Select(x => x.w + "@" + x.t.ToString("0.00"))), w?.End ?? -1, l.Plain.Replace("\n", "/"));
     }
+    return 0;
+  }
+  // --analyze file...: what listening finds
+  public static int Analyze(string[] files) {
+    Console.OutputEncoding = new System.Text.UTF8Encoding(false);
+    foreach (var p in files) {
+      var sw = System.Diagnostics.Stopwatch.StartNew();
+      try { var s = SongSound.Analyze(p, 0, null);
+        Console.WriteLine("{0}\tlen={1:0.00}\tbpm={2:0.0}\tkey={3}\tcam={4}\tsteps={5}\tms={6}", Path.GetFileName(p), s.Length, s.Bpm, s.Key, s.Camelot, s.Print.Length, sw.ElapsedMilliseconds); }
+      catch (Exception x) { Console.WriteLine(Path.GetFileName(p) + "\tERR " + x.Message); }
+    }
+    return 0;
+  }
+  // --match a b [seconds]: fingerprint difference, and where "seconds" in a is in b
+  public static int Match(string[] a) {
+    var x = SongSound.Analyze(a[0], 0, null); var y = SongSound.Analyze(a[1], 0, null);
+    var (ber, off) = SongSound.Match(x, y, 8);
+    double t = a.Length > 2 ? double.Parse(a[2], System.Globalization.CultureInfo.InvariantCulture) : 30;
+    Console.WriteLine("ber={0:0.000}\toffset={1:0.00}s\tmap({2})={3:0.00}", ber, off / SongSound.Fps, t, x.MapTo(y, t));
+    for (double q = 5; q < x.Length - 5; q += 7.3) Console.Write("{0:0.0}->{1:0.00}  ", q, x.MapTo(y, q));
+    Console.WriteLine();
     return 0;
   }
 }}
