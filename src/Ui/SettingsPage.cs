@@ -11,6 +11,7 @@ namespace Aura
         readonly IShell shell;
         public Action ImportAgain;
         public Action Changed;      // a look setting changed: redraw everything
+        public Action<string> ThemeChanged;
         static readonly string[] Swatches = { "#1688FF", "#7C5CFF", "#F72BD6", "#FF3B6B", "#FF6B35", "#FFB020", "#22C55E", "#14B8A6", "#06B6D4" };
 
         public SettingsPage(IShell shell) { this.shell = shell; }
@@ -68,9 +69,27 @@ namespace Aura
             y += h + Theme.F(20);
 
             // ---- look
-            h = Theme.F(220);
+            h = Theme.F(330);
             x = Card(g, y, h, "Look", null);
             float ly = y + Theme.F(58);
+            // themes as little previews
+            float tx = x, tsz = Math.Min(Theme.F(132), (cw - Theme.F(44) - Theme.F(12) * 4) / 5);
+            foreach (var p in Theme.Palettes)
+            {
+                var r = new RectangleF(tx, ly, tsz, Theme.F(76));
+                bool on = Theme.ThemeName == p.Name, hot = Hover("th:" + p.Name);
+                Theme.Fill(g, p.Bg, r, Theme.F(10));
+                Theme.Fill(g, p.Side, new RectangleF(r.X, r.Y, r.Width * 0.28f, r.Height), Theme.F(10));
+                Theme.Fill(g, p.Surface2, new RectangleF(r.X + r.Width * 0.36f, r.Y + Theme.F(14), r.Width * 0.5f, Theme.F(8)), Theme.F(4));
+                Theme.Fill(g, p.Surface, new RectangleF(r.X + r.Width * 0.36f, r.Y + Theme.F(28), r.Width * 0.36f, Theme.F(8)), Theme.F(4));
+                using (var b = new SolidBrush(Theme.Parse(p.Accent, Theme.AccentBase))) g.FillEllipse(b, r.X + r.Width * 0.36f, r.Y + Theme.F(46), Theme.F(18), Theme.F(18));
+                Theme.Stroke(g, on ? Theme.Text : hot ? Theme.Sub : Theme.Alpha(Color.White, 30), r, Theme.F(10), on ? Theme.F(2) : 1);
+                Theme.Write(g, p.Name, Theme.Font(13, FontStyle.Regular, on), on ? Theme.Text : Theme.Sub, new RectangleF(r.X, r.Bottom + Theme.F(4), r.Width, Theme.F(22)), Theme.Center);
+                var name = p.Name;
+                AddHit("th:" + p.Name, new RectangleF(r.X, r.Y, r.Width, r.Height + Theme.F(26)), () => ThemeChanged?.Invoke(name));
+                tx += tsz + Theme.F(12);
+            }
+            ly += Theme.F(118);
             Toggle(g, "cc", x, ly, cw - Theme.F(44), "Colors follow the song — AURA takes its color from the cover that's playing", shell.Prefs.CoverColors, () => { shell.Prefs.CoverColors = !shell.Prefs.CoverColors; Changed?.Invoke(); });
             ly += Theme.F(42);
             Toggle(g, "cmp", x, ly, cw - Theme.F(44), "Compact song list — smaller rows, more songs on screen", shell.Prefs.Compact, () => { shell.Prefs.Compact = !shell.Prefs.Compact; Changed?.Invoke(); });

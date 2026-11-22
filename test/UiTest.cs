@@ -47,6 +47,8 @@ namespace Aura
             if (script == "main") MainScript();
             else if (script == "resume") Resume();
             else if (script == "lyrics") LyricsScript();
+            else if (script == "playback") PlaybackScript();
+            else if (script == "organize") OrganizeScript();
             int i = 0; DateTime started = DateTime.Now; bool begun = false;
             var t = new Timer { Interval = 150 };
             t.Tick += (s, e) =>
@@ -373,7 +375,7 @@ namespace Aura
             Step("update found", () =>
             {
                 if (Updater.Checking) return false;
-                Ok(Updater.Available && Updater.Latest == "0.2.0", "a newer version on GitHub is noticed (" + Updater.Status + ")");
+                Ok(Updater.Available && Updater.Latest == "9.9.9", "a newer version on GitHub is noticed (" + Updater.Status + ")");
                 F.Go(new Route("settings"));
                 return true;
             });
@@ -385,6 +387,207 @@ namespace Aura
             {
                 if (got == null) return false;
                 Ok(got != null && File.Exists(got) && new FileInfo(got).Length > 300000, "the installer downloads (" + got + ")");
+                return true;
+            });
+        }
+
+        static void OrganizeScript()
+        {
+            Track Find(string fileStart) => L.Tracks.First(t => Path.GetFileName(t.Path).StartsWith(fileStart));
+            Step("scan", () => !L.Scan.Running && L.Tracks.Count >= 8);
+            Step("missing page", () => { F.Go(new Route("missing")); return true; });
+            Step("missing shot", () =>
+            {
+                if (!Pause(6)) return false;
+                Ok(MissingPage.Which(F, "noartist").Count == 2, "Missing info finds the 2 songs with no artist (" + MissingPage.Which(F, "noartist").Count + ")");
+                Shot("30_missing"); F.Go(new Route("missing", "noartist")); return true;
+            });
+            Step("missing list shot", () => { if (!Pause(6)) return false; Ok(TP != null && TP.RowCount == 2, "the No artist list shows them"); Shot("31_missing_list"); return true; });
+            Step("fill from names", () =>
+            {
+                var jobs = MainForm.FillJobs(MissingPage.Which(F, "noartist"));
+                Ok(jobs.Count == 2, "both can be filled in from their file names");
+                F.RunWrites(jobs, "Filled in");
+                return true;
+            });
+            Step("filled", () =>
+            {
+                if (F.Writing) return false;
+                var t = Find("03 - Juice WRLD - Robbery");
+                Ok(t.Artist == "Juice WRLD" && t.Title == "Robbery (v2)" && t.TrackNo == 3, "\"03 - Juice WRLD - Robbery (v2)\" becomes artist, title and track 3 (" + t.Artist + " / " + t.Title + " / " + t.TrackNo + ")");
+                var u = Find("Lucid Dreams [CDQ]");
+                Ok(u.Title == "Lucid Dreams [CDQ]" && u.Artist == "", "a name with no artist in it only fills the title");
+                var tg = Tags.Read(t.Path);
+                Ok(tg.Artist == "Juice WRLD" && tg.Title == "Robbery (v2)", "and it's saved in the file");
+                return true;
+            });
+            Step("edit while playing", () =>
+            {
+                var t = T("Robbery");
+                P.PlayList(new[] { t.Id }.ToList());
+                return true;
+            });
+            Step("edit while playing 2", () =>
+            {
+                if (P.Position < 3) return false;
+                var t = T("Robbery");
+                F.RunWrites(new List<(Track, TagEdit)> { (t, new TagEdit { Title = "Robbery", Album = "DRFL Edited", Year = "2019", Genre = "Hip-Hop" }) }, "Saved");
+                return true;
+            });
+            Step("edited", () =>
+            {
+                if (F.Writing || !Pause(4)) return false;
+                var t = T("Robbery");
+                Ok(t.Album == "DRFL Edited" && Tags.Read(t.Path).Album == "DRFL Edited", "Edit info saves into the file and the library");
+                Ok(P.Current == t && P.IsPlaying && P.Position > 3, "the song keeps playing from where it was (" + P.Position.ToString("0.0") + " s)");
+                var l = F.Lyrics.Get(t);
+                Ok(l != null && l.ByWord, "its lyrics and word timings are still there");
+                return true;
+            });
+            Step("edit form shot", () =>
+            {
+                var f = new EditInfoForm(L.Tracks.Where(x => x.MainArtist == "Juice WRLD").Take(3).ToList(), _ => null);
+                floating = f; f.Show(F); return true;
+            });
+            Step("edit form shot 2", () => { if (!Pause(5)) return false; ShotForm(floating, "32_edit_info"); floating.Close(); return true; });
+            Step("cover finder", () =>
+            {
+                var f = new CoverFinderForm("Juice WRLD Night Drive", 2); floating = f; f.Show(F); return true;
+            });
+            Step("cover results", () =>
+            {
+                var f = (CoverFinderForm)floating;
+                if (f.TestCount == 0 || !Pause(8)) return false;
+                Ok(f.TestCount == 3, "covers from Apple Music and Deezer are listed, duplicates once (" + f.TestCount + ")");
+                ShotForm(f, "33_cover_finder");
+                f.TestPick(0);
+                return true;
+            });
+            Step("cover picked", () =>
+            {
+                var f = (CoverFinderForm)floating;
+                if (f.Visible) return false;
+                Ok(f.Result != null && f.Result.Length > 1000, "the full-size cover downloads (" + (f.Result?.Length ?? 0) + " bytes)");
+                var t = Find("Lucid Dreams [CDQ]");
+                Ok(!t.HasArt, "(a song without a cover)");
+                F.RunWrites(new List<(Track, TagEdit)> { (t, new TagEdit { Picture = f.Result }) }, "Cover saved");
+                return true;
+            });
+            Step("cover saved", () =>
+            {
+                if (F.Writing) return false;
+                var t = Find("Lucid Dreams [CDQ]");
+                Ok(t.HasArt && Tags.Read(t.Path).HasPicture, "the cover is saved into the song");
+                return true;
+            });
+            Step("rename", () =>
+            {
+                var t = Find("Lucid Dreams [CDQ]");
+                var pl = L.CreatePlaylist("Keep me", new[] { t.Id });
+                L.SetFav(t, true);
+                var to = Path.Combine(Path.GetDirectoryName(t.Path), Editing.NameFor(t, "{title} (renamed)"));
+                L.Rename(t, to);
+                Ok(File.Exists(to) && t.Path == to && L.Get(t.Id) == t, "renaming moves the file and keeps the same song");
+                Ok(pl.Items.Contains(t.Id) && t.Fav, "it stays in its playlists and favorites");
+                return true;
+            });
+            Step("rescan after rename", () => { F.Rescan(); return true; });
+            Step("rescan done", () =>
+            {
+                if (L.Scan.Running || !Pause(6)) return false;
+                Ok(L.Tracks.Count(t => t.Name.StartsWith("Lucid Dreams [CDQ]")) == 1, "a rescan doesn't double it up");
+                return true;
+            });
+            Step("versions page", () => { F.Go(new Route("versions")); return true; });
+            Step("versions shot", () =>
+            {
+                if (!Pause(6)) return false;
+                var groups = L.VersionGroups();
+                Ok(groups.Any(g => g.Count == 2 && g.Any(t => t.Name == "Robbery") && g.Any(t => t.Name == "Robbery (v2)")), "Robbery and Robbery (v2) are versions of one song");
+                Ok(!groups.Any(g => g.Any(t => t.Name == "Lucid Dreams") && g.Any(t => t.Name.StartsWith("Lucid Dreams [CDQ]"))), "a copy with no artist tag isn't matched to someone else's song");
+                Shot("34_versions");
+                return true;
+            });
+            Step("switch version", () =>
+            {
+                P.PlayList(new[] { T("Robbery").Id }.ToList());
+                return true;
+            });
+            Step("switch version 2", () =>
+            {
+                if (P.Position < 4) return false;
+                F.Go(new Route("now"));
+                P.SwitchTo(T("Robbery (v2)"));
+                return true;
+            });
+            Step("switched", () =>
+            {
+                if (!Pause(6)) return false;
+                Ok(P.Current == T("Robbery (v2)") && P.Position > 4, "switching versions keeps your place (" + P.Position.ToString("0.0") + " s)");
+                Shot("35_now_versions");
+                return true;
+            });
+            Step("stats", () =>
+            {
+                // some listening history to chart
+                var rnd = new Random(3);
+                L.Db.Tx(() =>
+                {
+                    for (int i = 0; i < 120; i++)
+                    {
+                        var t = L.Tracks[rnd.Next(L.Tracks.Count)];
+                        L.Db.Exec("INSERT INTO history (track_id,ts) VALUES (?,?)", t.Id, Library.Now - rnd.NextDouble() * 28 * 86400);
+                        L.Db.Exec("INSERT OR IGNORE INTO plays (track_id,count,last_played) VALUES (?,0,0)", t.Id);
+                        L.Db.Exec("UPDATE plays SET count=count+1 WHERE track_id=?", t.Id);
+                    }
+                });
+                L.Load();
+                F.Go(new Route("stats"));
+                return true;
+            });
+            Step("stats shot", () => { if (!Pause(6)) return false; Shot("36_stats"); return true; });
+            Step("theme neon", () => { F.ApplyTheme("Neon"); F.Go(new Route("home")); return true; });
+            Step("neon shot", () =>
+            {
+                if (!Pause(8)) return false;
+                Ok(Theme.ThemeName == "Neon" && F.Prefs.ThemeName == "Neon" && Theme.Bg.ToArgb() != Color.FromArgb(9, 11, 17).ToArgb(), "themes change the colors and are remembered");
+                Shot("37_theme_neon"); F.ApplyTheme("Mono"); F.Go(new Route("settings")); return true;
+            });
+            Step("mono shot", () => { if (!Pause(8)) return false; Shot("38_theme_mono"); F.ApplyTheme("Midnight"); return true; });
+        }
+
+        static void PlaybackScript()
+        {
+            var problems = new List<string>();
+            Step("scan", () => { P.Problem += m => problems.Add(m); return !L.Scan.Running && L.Tracks.Count >= 4; });
+            Step("all found", () => { Ok(L.Tracks.Count == 4, "songs in awkward folders and with long or odd names are found (" + L.Tracks.Count + ")"); return true; });
+            foreach (var name in new[] { "Space Folder Song", "Hash Song", "Long Path Song" })
+            {
+                var nm = name;
+                Step("play " + nm, () => { P.PlayList(new[] { T(nm).Id }.ToList()); return true; });
+                Step("playing " + nm, () => { if (!Pause(10)) return false; Ok(P.IsPlaying && P.Current?.Name == nm && P.Position > 0.5, nm + " plays"); return true; });
+            }
+            Step("broken one", () => { problems.Clear(); P.PlayList(new[] { T("Broken Song").Id, T("Hash Song").Id }.ToList()); return true; });
+            Step("backup engine", () =>
+            {
+                if (!Pause(25)) return false;
+                Ok(P.Current?.Name == "Broken Song" && P.IsPlaying && P.Position > 0.5, "when the main engine can't play a song, the backup engine plays it (" + P.Current?.Name + " " + P.Position.ToString("0.0") + ")");
+                Ok(problems.Count == 0, "and no error is shown (" + string.Join("; ", problems) + ")");
+                return true;
+            });
+            Step("moved file", () =>
+            {
+                var t = T("Hash Song");
+                File.Move(t.Path, t.Path + ".moved");
+                problems.Clear();
+                P.PlayList(new[] { t.Id }.ToList());
+                return true;
+            });
+            Step("moved message", () =>
+            {
+                if (!Pause(4)) return false;
+                Ok(problems.Any(m => m.StartsWith("Can't find Hash Song")), "a song that really moved says so plainly (" + string.Join("; ", problems) + ")");
+                var t = T("Hash Song"); File.Move(t.Path + ".moved", t.Path);
                 return true;
             });
         }

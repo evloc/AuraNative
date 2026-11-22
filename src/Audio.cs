@@ -5,7 +5,7 @@ using System.Text;
 
 namespace Aura
 {
-    enum PlayState { Stopped, Playing, Paused, Ended }
+    enum PlayState { Stopped, Playing, Paused, Ended, Failed }
 
     interface IAudio : IDisposable
     {
@@ -18,6 +18,7 @@ namespace Aura
         double Duration { get; }
         int Volume { set; }
         PlayState Poll();
+        void Unload();          // let go of the file (so it can be changed or renamed)
     }
 
     static class AudioEngine
@@ -26,6 +27,14 @@ namespace Aura
         {
             if (test || !App.IsWindows) return new TestAudio();
             return (IAudio)WmpAudio.TryCreate() ?? new MciAudio();
+        }
+
+        // a second engine to try when the first can't play a song
+        public static IAudio Fallback(IAudio first)
+        {
+            if (first is TestAudio) return Environment.GetEnvironmentVariable("AURA_TEST_FALLBACK") != null ? new TestAudio { Picky = false } : null;
+            if (first is WmpAudio) return new MciAudio();
+            return WmpAudio.TryCreate();
         }
     }
 
@@ -58,7 +67,8 @@ namespace Aura
         public bool Load(string path)
         {
             wantPlay = false; sawPlaying = false; pending = -1;
-            try { w.URL = path; return true; } catch (Exception e) { App.Log("load " + path + ": " + e.Message); return false; }
+            var p = FileX.ForPlayer(path);
+            try { w.URL = p; return true; } catch (Exception e) { App.Log("Windows Media couldn't open " + path + (p != path ? " (as " + p + ")" : "") + ": " + e.Message); return false; }
         }
         public void Play() { wantPlay = true; sincePlay.Restart(); try { w.controls.play(); } catch { } }
         public void Pause() { wantPlay = false; try { w.controls.pause(); } catch { } }
@@ -88,10 +98,25 @@ namespace Aura
                 case 8: return wantPlay ? PlayState.Ended : PlayState.Stopped;
                 case 1:
                 case 10:
-                    // WMP drops to "stopped/ready" once a song finishes; a song that never starts counts as finished too
-                    if (wantPlay && (sawPlaying || sincePlay.Elapsed.TotalSeconds > 8)) return PlayState.Ended;
+                case 0:
+                    // WMP drops to "stopped/ready" once a song finishes
+                    if (wantPlay && sawPlaying) return PlayState.Ended;
+                    if (wantPlay && sincePlay.Elapsed.TotalSeconds > 5) return PlayState.Failed;     // it never started
                     return wantPlay ? PlayState.Playing : PlayState.Stopped;
-                default: return wantPlay ? PlayState.Playing : PlayState.Paused;
+                default:
+                    if (wantPlay && !sawPlaying && sincePlay.Elapsed.TotalSeconds > 12) return PlayState.Failed;
+                    return wantPlay ? PlayState.Playing : PlayState.Paused;
+            }
+        }
+
+        public void Unload() { wantPlay = false; pending = -1; try { w.controls.stop(); w.close(); } catch { } }
+
+        public string LastError
+        {
+            get
+            {
+                try { if (w.error.errorCount > 0) return (string)w.error.get_Item(0).errorDescription; } catch { }
+                return "";
             }
         }
 
@@ -115,7 +140,9 @@ namespace Aura
         public bool Load(string path)
         {
             if (open) Send("close aura");
-            open = Send("open \"" + path + "\" type mpegvideo alias aura") != null;
+            var p = Win.ShortPath(path) ?? path;     // MCI is happiest with short, plain paths
+            open = Send("open \"" + p + "\" type mpegvideo alias aura") != null;
+            if (!open) App.Log("MCI couldn't open " + path);
             if (open) Send("set aura time format milliseconds");
             wantPlay = false;
             return open;
@@ -137,8 +164,10 @@ namespace Aura
             if (m == "playing") return PlayState.Playing;
             if (m == "paused") return PlayState.Paused;
             if (wantPlay && Position >= Duration - 0.5) return PlayState.Ended;
+            if (wantPlay && m == "stopped" && Position < 0.5) return PlayState.Failed;
             return PlayState.Stopped;
         }
+        public void Unload() { wantPlay = false; if (open) Send("close aura"); open = false; }
         public void Dispose() { if (open) Send("close aura"); open = false; }
     }
 
@@ -149,15 +178,19 @@ namespace Aura
         double baseAt, dur;
         bool wantPlay;
         public static double Speed = 1;
-        public string Name => "test";
-        public bool Load(string path) { dur = Tags.Read(path).Duration; if (dur <= 0) dur = 30; baseAt = 0; sw.Reset(); wantPlay = false; return System.IO.File.Exists(path); }
-        public void Play() { wantPlay = true; sw.Start(); }
+        public bool Picky = true;       // test: the main engine "can't play" files with "broken" in the name
+        bool broken;
+        readonly Stopwatch since = new Stopwatch();
+        public string Name => Picky ? "test" : "test backup";
+        public bool Load(string path) { dur = Tags.Read(path).Duration; if (dur <= 0) dur = 30; baseAt = 0; sw.Reset(); wantPlay = false; broken = Picky && path.Contains("broken"); return System.IO.File.Exists(path); }
+        public void Play() { wantPlay = true; since.Restart(); if (!broken) sw.Start(); }
         public void Pause() { wantPlay = false; baseAt = Position; sw.Reset(); }
         public void Stop() { wantPlay = false; baseAt = 0; sw.Reset(); }
         public double Position { get => Math.Min(dur, baseAt + sw.Elapsed.TotalSeconds * Speed); set { baseAt = Math.Max(0, Math.Min(dur, value)); if (sw.IsRunning) sw.Restart(); else sw.Reset(); } }
         public double Duration => dur;
         public int Volume { set { } }
-        public PlayState Poll() => !wantPlay ? (baseAt > 0 ? PlayState.Paused : PlayState.Stopped) : Position >= dur ? PlayState.Ended : PlayState.Playing;
+        public PlayState Poll() => broken && wantPlay ? (since.Elapsed.TotalSeconds > 1 ? PlayState.Failed : PlayState.Playing) : !wantPlay ? (baseAt > 0 ? PlayState.Paused : PlayState.Stopped) : Position >= dur ? PlayState.Ended : PlayState.Playing;
+        public void Unload() { Stop(); }
         public void Dispose() { }
     }
 }

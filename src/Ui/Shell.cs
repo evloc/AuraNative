@@ -22,6 +22,10 @@ namespace Aura
         LyricsStore Lyrics { get; }
         void FullScreenLyrics();
         void FindLyrics(Track t);
+        void EditInfo(IList<Track> tracks);
+        void FindCover(IList<Track> tracks);
+        void FillFromNames(IList<Track> tracks);
+        void RenameFiles(IList<Track> tracks);
         void Go(Route r);
         void Back();
         void Forward();

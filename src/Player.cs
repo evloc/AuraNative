@@ -8,7 +8,9 @@ namespace Aura
     sealed class Player : IDisposable
     {
         readonly Library lib;
-        readonly IAudio audio;
+        readonly IAudio primary;
+        IAudio fallback, audio;        // audio: the engine playing the current song
+        bool triedFallback;
         readonly System.Windows.Forms.Timer timer;
         readonly Random rnd = new Random();
 
@@ -20,7 +22,7 @@ namespace Aura
         public Track Current { get; private set; }
         public PlayState State { get; private set; } = PlayState.Stopped;
         public bool IsPlaying => State == PlayState.Playing;
-        public string EngineName => audio.Name;
+        public string EngineName => primary.Name;
 
         public event Action TrackChanged, StateChanged, QueueChanged, Tick;
         public event Action<string> Problem;
@@ -32,7 +34,7 @@ namespace Aura
 
         public Player(Library lib, IAudio audio)
         {
-            this.lib = lib; this.audio = audio;
+            this.lib = lib; primary = this.audio = audio;
             timer = new System.Windows.Forms.Timer { Interval = 200 };
             timer.Tick += (s, e) => Poll();
             timer.Start();
@@ -41,7 +43,7 @@ namespace Aura
         public int Volume
         {
             get => volume;
-            set { volume = Math.Max(0, Math.Min(100, value)); audio.Volume = volume; }
+            set { volume = Math.Max(0, Math.Min(100, value)); audio.Volume = volume; }   // the other engine gets it when it's used
         }
 
         public double Position => Current == null ? 0 : audio.Position;
@@ -151,20 +153,47 @@ namespace Aura
         {
             if (Pos < 0 || Pos >= Order.Count) { StopAll(); return; }
             var t = lib.Get(Queue[Order[Pos]]);
-            if (t == null || !System.IO.File.Exists(t.Path) || !audio.Load(t.Path))
+            string why = null;
+            if (t == null) why = "That song isn't in your library any more";
+            else if (!FileX.Exists(t.Path)) { why = "Can't find " + t.Name + " — it may have been moved or renamed"; App.Log("not found: " + t.Path); }
+            else if (!LoadWith(t, play)) why = "Windows couldn't play " + t.Name;
+            if (why != null)
             {
                 failsInRow++;
-                Problem?.Invoke(t == null ? "That song isn't in your library any more" : "Couldn't play " + t.Name + " — the file is missing or can't be opened");
+                Problem?.Invoke(why);
                 if (failsInRow < Math.Min(Order.Count, 25)) { Advance(true); return; }
                 failsInRow = 0; StopAll(); return;
             }
             Current = t;
             listened = 0; lastPos = 0; counted = false;
-            audio.Volume = volume;
             if (play) { audio.Play(); State = PlayState.Playing; }
             else State = PlayState.Paused;
             TrackChanged?.Invoke();
             StateChanged?.Invoke();
+        }
+
+        // opens a song in the main engine, or the second one if the main one can't
+        bool LoadWith(Track t, bool play)
+        {
+            if (audio != primary) { try { audio.Stop(); } catch { } audio = primary; }
+            triedFallback = false;
+            if (primary.Load(t.Path)) { audio.Volume = volume; return true; }
+            return SwitchToFallback(t, false);
+        }
+
+        bool SwitchToFallback(Track t, bool play)
+        {
+            if (triedFallback) return false;
+            triedFallback = true;
+            if (fallback == null) fallback = AudioEngine.Fallback(primary);
+            if (fallback == null) return false;
+            try { primary.Stop(); } catch { }
+            App.Log("trying " + fallback.Name + " for " + t.Path);
+            if (!fallback.Load(t.Path)) return false;
+            audio = fallback;
+            audio.Volume = volume;
+            if (play) audio.Play();
+            return true;
         }
 
         void StopAll()
@@ -229,6 +258,17 @@ namespace Aura
         {
             if (Current == null) return;
             var s = audio.Poll();
+            if (s == PlayState.Failed)
+            {
+                var t = Current;
+                string err = (audio as WmpAudio)?.LastError ?? "";
+                App.Log(audio.Name + " couldn't play " + t.Path + (err.Length > 0 ? ": " + err : ""));
+                if (SwitchToFallback(t, true)) return;
+                Problem?.Invoke("Windows couldn't play " + t.Name + (err.Length > 0 ? " (" + err + ")" : ""));
+                failsInRow++;
+                if (failsInRow < Math.Min(Order.Count, 25)) Advance(true); else { failsInRow = 0; StopAll(); }
+                return;
+            }
             if (s == PlayState.Ended)
             {
                 CountIfListened(true);
@@ -290,7 +330,7 @@ namespace Aura
                 }
                 Queue = nq; Order = no; Pos = npos >= 0 ? npos : Math.Min(Math.Max(0, s.QueuePos), no.Count - 1);
             }
-            if (Pos >= 0 && Pos < Order.Count && lib.Get(Queue[Order[Pos]]) is Track t && t.Id == s.LastTrack && System.IO.File.Exists(t.Path))
+            if (Pos >= 0 && Pos < Order.Count && lib.Get(Queue[Order[Pos]]) is Track t && t.Id == s.LastTrack && FileX.Exists(t.Path))
             {
                 Start(false);
                 if (s.LastPosition > 1 && s.LastPosition < t.Duration - 2) audio.Position = s.LastPosition;
@@ -299,6 +339,45 @@ namespace Aura
             QueueChanged?.Invoke();
         }
 
-        public void Dispose() { timer.Stop(); audio.Dispose(); }
+        // play another version of the current song from the same point
+        public void SwitchTo(Track t)
+        {
+            if (Current == null || t == null) { if (t != null) PlayList(new List<long> { t.Id }); return; }
+            double pos = audio.Position;
+            bool playing = State == PlayState.Playing || State == PlayState.Paused;
+            Queue[Order[Pos]] = t.Id;
+            Start(true);
+            if (Current == t && pos > 1 && pos < t.Duration - 2) audio.Position = pos;
+            QueueChanged?.Invoke();
+        }
+
+        // while a song's file is being changed, the player lets go of it, then picks up where it was
+        public sealed class Held { public Track Track; public double Pos; public bool Playing; }
+
+        public Held Release(IEnumerable<long> ids)
+        {
+            var t = Current;
+            if (t == null || !ids.Contains(t.Id)) return null;
+            var h = new Held { Track = t, Pos = audio.Position, Playing = State == PlayState.Playing };
+            try { audio.Unload(); } catch { }
+            State = PlayState.Paused;
+            StateChanged?.Invoke();
+            return h;
+        }
+
+        public void Restore(Held h)
+        {
+            if (h == null || Current != h.Track) return;
+            var t = lib.Get(h.Track.Id) ?? h.Track;
+            Current = t;
+            if (!LoadWith(t, h.Playing)) { Problem?.Invoke("Couldn't open " + t.Name + " again"); return; }
+            audio.Position = h.Pos;
+            if (h.Playing) { audio.Play(); State = PlayState.Playing; }
+            lastPos = h.Pos;
+            StateChanged?.Invoke();
+            TrackChanged?.Invoke();
+        }
+
+        public void Dispose() { timer.Stop(); primary.Dispose(); fallback?.Dispose(); }
     }
 }

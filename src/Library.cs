@@ -246,7 +246,7 @@ CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT)";
                     if (!seen.Add(path)) continue;
                     Scan.Seen++;
                     FileInfo fi;
-                    try { fi = new FileInfo(path); } catch { continue; }
+                    try { fi = new FileInfo(FileX.Long(path)); } catch { continue; }
                     long size = fi.Length;
                     double mtime = (fi.LastWriteTimeUtc - new DateTime(1970, 1, 1)).TotalSeconds;
                     if (known.TryGetValue(path, out var k) && !k.missing && k.size == size && Math.Abs(k.mtime - mtime) < 2) continue;
@@ -291,6 +291,55 @@ CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT)";
                     }
                 }
             });
+        }
+
+        // ---------- after AURA changes a file ----------
+        public void Refresh(Track t)
+        {
+            var path = t.Path;
+            var tg = Tags.Read(path);
+            var fi = new FileInfo(FileX.Long(path));
+            double mtime = (fi.LastWriteTimeUtc - new DateTime(1970, 1, 1)).TotalSeconds;
+            t.Title = tg.Title; t.Artist = tg.Artist; t.Album = tg.Album; t.AlbumArtist = tg.AlbumArtist; t.Year = tg.Year; t.Genre = tg.Genre;
+            t.TrackNo = int.TryParse(tg.Track, out int tn) ? tn : 0; t.Duration = tg.Duration > 0 ? tg.Duration : t.Duration;
+            t.HasArt = tg.HasPicture; t.Size = fi.Length; t.Mtime = mtime;
+            t.HasLyrics = tg.HasLyrics || LyricsStore.Sidecar(path) != null;
+            Db.Exec("UPDATE tracks SET size=?,mtime=?,title=?,artist=?,album=?,albumartist=?,year=?,genre=?,track_no=?,duration=?,has_art=?,has_lyrics=?,missing=0 WHERE id=?",
+                t.Size, t.Mtime, t.Title, t.Artist, t.Album, t.AlbumArtist, t.Year, t.Genre, t.TrackNo, t.Duration, t.HasArt, t.HasLyrics, t.Id);
+        }
+
+        // renames the file and keeps the same song (with its plays, playlists and favorites)
+        public void Rename(Track t, string newPath)
+        {
+            File.Move(FileX.Long(t.Path), FileX.Long(newPath));
+            foreach (var ext in new[] { ".lrc", ".LRC" })
+            {
+                var side = Path.ChangeExtension(t.Path, ext);
+                if (FileX.Exists(side)) try { File.Move(FileX.Long(side), FileX.Long(Path.ChangeExtension(newPath, ".lrc"))); } catch { }
+            }
+            Db.Exec("DELETE FROM tracks WHERE path=? AND id<>?", newPath, t.Id);
+            Db.Exec("UPDATE tracks SET path=? WHERE id=?", newPath, t.Id);
+            t.Path = newPath;
+        }
+
+        // versions of the same song: same cleaned-up title and main artist
+        public static string VersionKey(Track t)
+        {
+            var title = LyricsOnline.Norm(LyricsOnline.CleanTitle(t.Title.Length > 0 ? t.Title : Path.GetFileNameWithoutExtension(t.Path)));
+            return title.Length == 0 ? "" : title + "|" + LyricsOnline.Norm(t.MainArtist);
+        }
+
+        public List<List<Track>> VersionGroups()
+        {
+            return Tracks.GroupBy(VersionKey).Where(g => g.Key.Length > 0 && g.Count() > 1)
+                .Select(g => g.OrderByDescending(t => t.Plays).ThenBy(t => t.Name, StringComparer.CurrentCultureIgnoreCase).ToList())
+                .OrderBy(g => g[0].Name, StringComparer.CurrentCultureIgnoreCase).ToList();
+        }
+
+        public List<Track> VersionsOf(Track t)
+        {
+            var k = VersionKey(t);
+            return k.Length == 0 ? new List<Track> { t } : Tracks.Where(x => VersionKey(x) == k).OrderByDescending(x => x.Plays).ThenBy(x => x.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
         }
 
         // ---------- favorites, plays ----------

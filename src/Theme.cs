@@ -13,15 +13,40 @@ namespace Aura
         public static int P(float v) => (int)Math.Round(v * S);
         public static float F(float v) => v * S;
 
-        public static readonly Color Bg = Color.FromArgb(9, 11, 17);
-        public static readonly Color Side = Color.FromArgb(5, 7, 11);
-        public static readonly Color Bar = Color.FromArgb(11, 14, 21);
-        public static readonly Color Surface = Color.FromArgb(18, 23, 33);
-        public static readonly Color Surface2 = Color.FromArgb(27, 33, 46);
-        public static readonly Color Hair = Color.FromArgb(30, 37, 50);
-        public static readonly Color Text = Color.FromArgb(244, 246, 250);
-        public static readonly Color Sub = Color.FromArgb(163, 172, 186);
-        public static readonly Color Faint = Color.FromArgb(107, 117, 133);
+        public static Color Bg = Color.FromArgb(9, 11, 17);
+        public static Color Side = Color.FromArgb(5, 7, 11);
+        public static Color Bar = Color.FromArgb(11, 14, 21);
+        public static Color Surface = Color.FromArgb(18, 23, 33);
+        public static Color Surface2 = Color.FromArgb(27, 33, 46);
+        public static Color Hair = Color.FromArgb(30, 37, 50);
+        public static Color Text = Color.FromArgb(244, 246, 250);
+        public static Color Sub = Color.FromArgb(163, 172, 186);
+        public static Color Faint = Color.FromArgb(107, 117, 133);
+
+        // ---------- themes ----------
+        public sealed class Palette
+        {
+            public string Name, Accent;
+            public Color Bg, Side, Bar, Surface, Surface2, Hair, Text, Sub, Faint;
+        }
+
+        static Color C(int r, int g, int b) => Color.FromArgb(r, g, b);
+        public static readonly Palette[] Palettes =
+        {
+            new Palette { Name = "Midnight", Accent = "#1688FF", Bg = C(9, 11, 17), Side = C(5, 7, 11), Bar = C(11, 14, 21), Surface = C(18, 23, 33), Surface2 = C(27, 33, 46), Hair = C(30, 37, 50), Text = C(244, 246, 250), Sub = C(163, 172, 186), Faint = C(107, 117, 133) },
+            new Palette { Name = "Neon", Accent = "#F72BD6", Bg = C(13, 8, 24), Side = C(8, 5, 16), Bar = C(16, 10, 30), Surface = C(27, 18, 46), Surface2 = C(40, 27, 66), Hair = C(46, 33, 72), Text = C(248, 244, 255), Sub = C(178, 164, 204), Faint = C(120, 106, 150) },
+            new Palette { Name = "Sunset", Accent = "#FF6B35", Bg = C(21, 12, 13), Side = C(14, 8, 9), Bar = C(25, 14, 15), Surface = C(39, 23, 23), Surface2 = C(56, 33, 31), Hair = C(62, 39, 37), Text = C(255, 246, 242), Sub = C(205, 175, 166), Faint = C(150, 118, 110) },
+            new Palette { Name = "Ocean", Accent = "#14B8A6", Bg = C(6, 16, 20), Side = C(4, 11, 14), Bar = C(8, 20, 25), Surface = C(14, 32, 38), Surface2 = C(21, 45, 53), Hair = C(26, 52, 60), Text = C(240, 250, 250), Sub = C(156, 186, 190), Faint = C(100, 130, 136) },
+            new Palette { Name = "Mono", Accent = "#D4D4D8", Bg = C(12, 12, 13), Side = C(7, 7, 8), Bar = C(16, 16, 17), Surface = C(26, 26, 28), Surface2 = C(38, 38, 41), Hair = C(44, 44, 47), Text = C(245, 245, 245), Sub = C(170, 170, 175), Faint = C(115, 115, 120) },
+        };
+        public static string ThemeName = "Midnight";
+
+        public static void Apply(string name)
+        {
+            var p = Palettes.FirstOrDefault(x => x.Name == name) ?? Palettes[0];
+            ThemeName = p.Name;
+            Bg = p.Bg; Side = p.Side; Bar = p.Bar; Surface = p.Surface; Surface2 = p.Surface2; Hair = p.Hair; Text = p.Text; Sub = p.Sub; Faint = p.Faint;
+        }
 
         public static Color AccentBase = Color.FromArgb(22, 136, 255);
         public static Color Accent = AccentBase;
@@ -58,6 +83,8 @@ namespace Aura
             Color.FromArgb((int)(a.A + (b.A - a.A) * k), (int)(a.R + (b.R - a.R) * k), (int)(a.G + (b.G - a.G) * k), (int)(a.B + (b.B - a.B) * k));
         public static Color Alpha(Color c, int a) => Color.FromArgb(Math.Max(0, Math.Min(255, a)), c.R, c.G, c.B);
         public static Color AccentText => Mix(Accent, Color.White, 0.25f);
+        // text and icons on top of the accent color: dark when the accent is very light
+        public static Color OnAccent => Accent.GetBrightness() > 0.72f ? Color.FromArgb(12, 14, 18) : Color.White;
 
         public static Color FromHsl(float h, float s, float l)
         {

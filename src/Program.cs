@@ -14,6 +14,7 @@ namespace Aura
         {
 #if TESTHOOKS
             if (args.Length > 0 && args[0] == "--tagdump") return TagDump.Run(args.Skip(1).ToArray());
+            if (args.Length > 0 && args[0] == "--tagwrite") return TagDump.Write(args.Skip(1).ToArray());
             if (args.Length > 0 && args[0] == "--lyricsdump") return TagDump.Lyrics(args.Skip(1).ToArray());
 #endif
             string data = Arg(args, "--data");
@@ -55,6 +56,7 @@ namespace Aura
                 prefs.Folders = OldConfig.ReadFolders(Path.Combine(App.OldDir, "config.json")).Where(f => !string.IsNullOrWhiteSpace(f)).ToList();
             var music = Arg(args, "--music");
             if (music != null && !prefs.Folders.Contains(music)) prefs.Folders.Add(music);
+            Theme.Apply(prefs.ThemeName);
             Theme.AccentBase = Theme.Accent = Theme.Parse(prefs.Accent, Theme.AccentBase);
 
             Library lib;

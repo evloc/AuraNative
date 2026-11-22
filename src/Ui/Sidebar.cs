@@ -47,6 +47,15 @@ namespace Aura
             NavItem(g, ref y, "favorites", "heart", "Favorites", new Route("favorites"), On("favorites"));
             NavItem(g, ref y, "queue", "queue", "Up next", new Route("queue"), On("queue"));
 
+            y += Theme.F(10);
+            using (var pen = new Pen(Theme.Hair)) g.DrawLine(pen, Theme.F(24), y, Width - Theme.F(24), y);
+            y += Theme.F(14);
+            Theme.Write(g, "ORGANIZE", Theme.Font(11.5f, FontStyle.Regular, true), Theme.Faint, new RectangleF(Theme.F(26), y, Theme.F(150), Theme.F(22)));
+            y += Theme.F(28);
+            NavItem(g, ref y, "missing", "edit", "Missing info", new Route("missing"), On("missing"));
+            NavItem(g, ref y, "versions", "album", "Versions", new Route("versions"), On("versions") || On("version"));
+            NavItem(g, ref y, "stats", "bars", "Stats", new Route("stats"), On("stats"));
+
             y += Theme.F(14);
             using (var pen = new Pen(Theme.Hair)) g.DrawLine(pen, Theme.F(24), y, Width - Theme.F(24), y);
             y += Theme.F(16);

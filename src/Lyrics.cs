@@ -407,7 +407,7 @@ CREATE TABLE IF NOT EXISTS lyrics_tried (track_id INTEGER PRIMARY KEY, ts REAL)"
             foreach (var ext in new[] { ".lrc", ".LRC" })
             {
                 var p = Path.ChangeExtension(path, ext);
-                if (File.Exists(p)) return p;
+                if (FileX.Exists(p)) return p;
             }
             return null;
         }
@@ -443,7 +443,7 @@ CREATE TABLE IF NOT EXISTS lyrics_tried (track_id INTEGER PRIMARY KEY, ts REAL)"
             var side = Sidecar(t.Path);
             if (side != null)
             {
-                try { var l = Lyrics.From(File.ReadAllText(side), null, null, "From " + Path.GetFileName(side)); if (l != null) return l; } catch { }
+                try { var l = Lyrics.From(File.ReadAllText(FileX.Long(side)), null, null, "From " + Path.GetFileName(side)); if (l != null) return l; } catch { }
             }
             return Found();
         }

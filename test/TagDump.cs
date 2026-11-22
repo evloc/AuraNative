@@ -10,6 +10,18 @@ static class TagDump {
     }
     return 0;
   }
+  // --tagwrite file key=value ... (cover=path, nocover)
+  public static int Write(string[] args) {
+    Console.OutputEncoding = new System.Text.UTF8Encoding(false);
+    var e = new TagEdit();
+    foreach (var a in args.Skip(1)) {
+      int eq = a.IndexOf('='); string k = eq < 0 ? a : a.Substring(0, eq), v = eq < 0 ? "" : a.Substring(eq + 1);
+      switch (k) { case "title": e.Title = v; break; case "artist": e.Artist = v; break; case "album": e.Album = v; break; case "albumartist": e.AlbumArtist = v; break;
+        case "year": e.Year = v; break; case "genre": e.Genre = v; break; case "track": e.Track = v; break; case "cover": e.Picture = File.ReadAllBytes(v); break; case "nocover": e.RemovePicture = true; break; }
+    }
+    try { TagWriter.Write(args[0], e); Console.WriteLine("OK " + Path.GetFileName(args[0])); return 0; }
+    catch (Exception x) { Console.WriteLine("ERR " + Path.GetFileName(args[0]) + ": " + x.Message); return 1; }
+  }
   public static int Lyrics(string[] files) {
     Console.OutputEncoding = new System.Text.UTF8Encoding(false);
     foreach (var p in files) {

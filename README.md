@@ -39,6 +39,23 @@ installed side by side, and each keeps its own library:
   without lyrics and only keeps a match when the title and artist both agree;
   **Find lyrics** lets you search and pick yourself. Found lyrics are saved in
   AURA — your music files aren't changed.
+- **Edit info** — right-click songs → Edit info to change the title, artist,
+  album, album artist, year, genre, track number and cover, for one song or
+  many at once (only the boxes you change are saved). Works for MP3, FLAC,
+  Ogg, Opus, M4A, WAV and AIFF. AURA writes a new copy, reads it back to check
+  it, and only then swaps it in, so a failed save never damages a song. A song
+  that's playing keeps playing.
+- **Find a cover** — searches Apple Music and Deezer; use it for one song or
+  the whole album, or choose a picture file.
+- **Fill in blanks from file names** — "03 - Juice WRLD - Robbery (v2).mp3"
+  gives track 3, artist and title. Only empty boxes are filled.
+- **Rename files** — from a pattern like {artist} - {title}; plays, playlists
+  and favorites stay with each song.
+- **Missing info** — songs with no artist, title, cover, album, year or lyrics.
+- **Versions** — songs that come in more than one version (v2, CDQ, snippet…)
+  side by side; switch versions in Now Playing without losing your place.
+- **Stats** — listening time, plays by day or month, top songs and artists.
+- **Themes** — Midnight, Neon, Sunset, Ocean and Mono.
 - **Updates itself** — when a new version is on GitHub, an Update button shows
   at the top; AURA installs it and opens again.
 - **Picks up where you left off** — same song, same place, same queue.
@@ -46,8 +63,8 @@ installed side by side, and each keeps its own library:
   folders, playlists, favorites and play counts from the first AURA
   (matched by file path; the first AURA is not changed).
 
-Not here yet (still in the first AURA): auto-sync and transcribe, the tag
-editor and organizer tools, cover finder, converter, versions, stats and themes.
+Not here yet (still in the first AURA): auto-sync and transcribe (they need a
+speech-recognition model), converting to MP3, and BPM/key detection.
 
 ## Keys
 

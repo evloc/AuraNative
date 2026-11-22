@@ -29,6 +29,8 @@ namespace Aura
         [DataMember] public bool SongsDesc = true;
         [DataMember] public bool AutoLyrics = true;      // look online by itself for songs without lyrics
         [DataMember] public bool CheckUpdates = true;
+        [DataMember] public string RenamePattern = "{artist} - {title}";
+        [DataMember] public string ThemeName = "Midnight";
 
         public static string Dir;
         static string FilePath => System.IO.Path.Combine(Dir, "settings.json");

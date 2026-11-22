@@ -113,7 +113,7 @@ namespace Aura
                 foreach (var n in FolderNames)
                 {
                     var f = Path.Combine(folder ?? "", n);
-                    if (File.Exists(f)) { data = File.ReadAllBytes(f); break; }
+                    if (FileX.Exists(f)) { data = File.ReadAllBytes(FileX.Long(f)); break; }
                 }
             }
             if (data == null || data.Length == 0) return null;

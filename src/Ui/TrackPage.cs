@@ -27,14 +27,14 @@ namespace Aura
         int dragFrom = -1, dropAt = -1; PointF dragStart; bool dragging;
 
         bool CanReorder => (kind == "playlist" || kind == "queue") && rows.Count > 1;
-        bool Sortable => kind == "songs" || kind == "favorites" || kind == "search";
+        bool Sortable => kind == "songs" || kind == "favorites" || kind == "search" || kind == "missing";
 
         public TrackPage(IShell shell, Route r)
         {
             this.shell = shell; Route = r;
             if (kind == "songs") { sortKey = shell.Prefs.SongsSort; sortDesc = shell.Prefs.SongsDesc; }
             else if (kind == "favorites") { sortKey = "added"; sortDesc = true; }
-            else if (kind == "search") { sortKey = "title"; sortDesc = false; }
+            else if (kind == "search" || kind == "missing") { sortKey = "title"; sortDesc = false; }
             Reload();
         }
 
@@ -62,6 +62,8 @@ namespace Aura
                     src = playlist == null ? new List<Track>() : playlist.Items.Select(lib.Get).Where(t => t != null);
                     break;
                 case "favorites": src = lib.Tracks.Where(t => t.Fav); break;
+                case "missing": src = MissingPage.Which(shell, Route.Key); break;
+                case "version": src = lib.Tracks.Where(t => Library.VersionKey(t) == Route.Key).OrderByDescending(t => t.Plays).ThenBy(t => t.Name, StringComparer.CurrentCultureIgnoreCase); break;
                 case "queue": src = shell.Player.UpNext().Select(lib.Get).Where(t => t != null); break;
                 case "search":
                     {
@@ -309,6 +311,16 @@ namespace Aura
                     meta = Theme.Count(rows.Count, "song") + (artistAlbums.Count > 0 ? "  ·  " + Theme.Count(artistAlbums.Count, "album") : "") + "  ·  " + Theme.Count(rows.Sum(t => t.Plays), "play");
                     break;
                 case "playlist": eyebrow = "PLAYLIST"; title = playlist?.Name ?? "Playlist"; meta = Theme.Count(rows.Count, "song") + (total > 0 ? ", " + Theme.Long(total) : ""); break;
+                case "missing":
+                    eyebrow = "MISSING INFO";
+                    title = MissingPage.Kinds.FirstOrDefault(k => k.key == Route.Key).title ?? "Missing";
+                    meta = Theme.Count(rows.Count, "song") + "  ·  select songs (Ctrl+A for all) and right-click to fix them";
+                    break;
+                case "version":
+                    eyebrow = "VERSIONS";
+                    title = rows.Count > 0 ? LyricsOnline.CleanTitle(rows[0].Name) : "Versions";
+                    meta = (rows.Count > 0 ? rows[0].MainArtist + "  ·  " : "") + Theme.Count(rows.Count, "version");
+                    break;
             }
 
             float headH = big ? Theme.F(260) : Theme.F(118);
@@ -375,6 +387,23 @@ namespace Aura
                 }
                 if (kind == "queue" && rows.Count > 0) bx = Pill(g, "clr", bx, py, "Clear up next", () => shell.Player.ClearUpNext(), icon: "close").Right + Theme.F(10);
                 if (kind == "songs") bx = Pill(g, "most", bx, py, sortKey == "plays" ? "Most played  ✓" : "Most played", () => { sortKey = sortKey == "plays" ? "added" : "plays"; sortDesc = true; shell.Prefs.SongsSort = sortKey; Reload(); }).Right + Theme.F(10);
+                if (kind == "missing" && rows.Count > 0)
+                {
+                    var all = rows.ToList();
+                    if (Route.Key == "noart") bx = Pill(g, "fc", bx, py, "Find a cover for the first one", () => shell.FindCover(new List<Track> { all[0] }), icon: "search").Right + Theme.F(10);
+                    else if (Route.Key == "nolyrics") bx = Pill(g, "la", bx, py, "Look again for all", () => { shell.Lyrics.TryAllAgain(); shell.Toast("Looking again for songs without lyrics"); }, icon: "refresh").Right + Theme.F(10);
+                    else
+                    {
+                        bx = Pill(g, "ea", bx, py, "Edit all " + rows.Count, () => shell.EditInfo(all), icon: "edit").Right + Theme.F(10);
+                        if (Route.Key == "notitle" || Route.Key == "noartist") bx = Pill(g, "ff", bx, py, "Fill in from file names", () => shell.FillFromNames(all)).Right + Theme.F(10);
+                    }
+                }
+                if (kind == "album" && rows.Count > 0)
+                {
+                    var all = rows.ToList();
+                    bx = Pill(g, "ed", bx, py, "Edit", () => shell.EditInfo(all), icon: "edit").Right + Theme.F(10);
+                    bx = Pill(g, "cv", bx, py, "Cover", () => shell.FindCover(new List<Track> { all[0] }), icon: "album").Right + Theme.F(10);
+                }
                 if (kind == "artist" || kind == "album")
                 {
                     var ids = Ids;

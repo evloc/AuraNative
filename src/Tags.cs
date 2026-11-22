@@ -29,7 +29,7 @@ namespace Aura
             var t = new TagInfo();
             try
             {
-                using (var f = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 65536))
+                using (var f = FileX.OpenRead(path))
                 {
                     var head = new byte[12];
                     int n = f.Read(head, 0, 12);
@@ -675,6 +675,7 @@ namespace Aura
         {
             f.Position = 12;
             int byteRate = 0; long dataSize = 0;
+            var info = new TagInfo();
             while (f.Position + 8 <= f.Length)
             {
                 var h = ReadN(f, 8);
@@ -698,12 +699,12 @@ namespace Aura
                             string v = Encoding.UTF8.GetString(b, o + 8, n);
                             switch (k)
                             {
-                                case "INAM": Set(ref t.Title, v); break;
-                                case "IART": Set(ref t.Artist, v); break;
-                                case "IPRD": Set(ref t.Album, v); break;
-                                case "ICRD": Set(ref t.Year, v); break;
-                                case "IGNR": Set(ref t.Genre, v); break;
-                                case "ITRK": case "IPRT": Set(ref t.Track, v); break;
+                                case "INAM": Set(ref info.Title, v); break;
+                                case "IART": Set(ref info.Artist, v); break;
+                                case "IPRD": Set(ref info.Album, v); break;
+                                case "ICRD": Set(ref info.Year, v); break;
+                                case "IGNR": Set(ref info.Genre, v); break;
+                                case "ITRK": case "IPRT": Set(ref info.Track, v); break;
                             }
                             o += 8 + n + (n & 1);
                         }
@@ -713,6 +714,8 @@ namespace Aura
                 f.Position = next;
             }
             if (byteRate > 0 && dataSize > 0) t.Duration = dataSize / (double)byteRate;
+            Set(ref t.Title, info.Title); Set(ref t.Artist, info.Artist); Set(ref t.Album, info.Album);
+            Set(ref t.Year, info.Year); Set(ref t.Genre, info.Genre); Set(ref t.Track, info.Track);
         }
 
         static double Ext80(byte[] b, int o)

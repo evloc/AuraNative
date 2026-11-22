@@ -251,11 +251,15 @@ namespace Aura
             {
                 case "home": page = new HomePage(this); break;
                 case "now": page = new NowPlayingPage(this); break;
+                case "missing" when r.Key.Length == 0: page = new MissingPage(this); break;
+                case "versions": page = new VersionsPage(this); break;
+                case "stats": page = new StatsPage(this); break;
                 case "artists": case "albums": page = new GridPage(this, r); break;
                 case "settings":
                     {
                         var sp = new SettingsPage(this);
                         sp.Changed = LookChanged;
+                        sp.ThemeChanged = ApplyTheme;
                         sp.ImportAgain = () => ImportOld(true);
                         page = sp; break;
                     }
@@ -285,6 +289,10 @@ namespace Aura
                 case GridPage gp: gp.Reload(); break;
                 case HomePage hp: hp.Reload(); break;
                 case SettingsPage sp: sp.Reload(); break;
+                case MissingPage mp: mp.Reload(); break;
+                case VersionsPage vp: vp.Reload(); break;
+                case StatsPage stp: stp.Reload(); break;
+                case NowPlayingPage np: np.Reload(); break;
             }
         }
 
@@ -292,6 +300,20 @@ namespace Aura
         {
             ReloadPage();
             Side.Invalidate(); Bar.Invalidate(); Head.Invalidate();
+        }
+
+        // a new theme: recolor the window and draw the page again
+        public void ApplyTheme(string name)
+        {
+            Theme.Apply(name);
+            var p = Theme.Palettes.First(x => x.Name == Theme.ThemeName);
+            Prefs.ThemeName = p.Name; Prefs.Accent = p.Accent;
+            BackColor = Theme.Side; Side.BackColor = Theme.Side; Bar.BackColor = Theme.Bar; Head.BackColor = Theme.Bg;
+            host.BackColor = Theme.Bg; if (host.Parent != null) host.Parent.BackColor = Theme.Bg;
+            Head.Search.BackColor = Theme.Surface; Head.Search.ForeColor = Theme.Text;
+            Win.DarkTitle(Handle);
+            LookChanged();
+            if (Current != null) { if (Page is Canvas c) Current.Scroll = c.Offset; ShowPage(Current); }
         }
 
         void LookChanged()
@@ -315,6 +337,125 @@ namespace Aura
         {
             if (t == null) return;
             using (var f = new LyricsFinder(this, t)) f.ShowDialog(this);
+        }
+
+        // ---------- editing songs ----------
+        bool writing;
+
+        // writes tags in the background; the player lets go of a song while it's changed
+        internal bool Writing => writing;
+        internal void RunWrites(List<(Track t, TagEdit e)> jobs, string what)
+        {
+            if (jobs.Count == 0) return;
+            if (writing) { Toast("AURA is still saving the last change — try again in a moment"); return; }
+            writing = true;
+            var held = Player.Release(jobs.Select(j => j.t.Id).ToList());
+            var failed = new List<string>();
+            var done = new List<Track>();
+            var ctx = System.Threading.SynchronizationContext.Current;
+            if (jobs.Count > 3) Toast("Saving " + Theme.Count(jobs.Count, "song") + "…");
+            new System.Threading.Thread(() =>
+            {
+                int i = 0;
+                foreach (var (t, e) in jobs)
+                {
+                    i++;
+                    try { TagWriter.Write(t.Path, e); done.Add(t); }
+                    catch (Exception x) { failed.Add(t.Name + ": " + x.Message); App.Log("couldn't save tags for " + t.Path + ": " + x); }
+                    if (jobs.Count > 3 && i % 10 == 0) { int k = i; ctx.Post(_ => Toast("Saving… " + k + " of " + jobs.Count), null); }
+                }
+                ctx.Post(_ =>
+                {
+                    foreach (var t in done) { try { Lib.Refresh(t); } catch (Exception x) { App.Log("refresh " + t.Path + ": " + x.Message); } Art.Forget(t.Id); Lyrics.Forget(t.Id); }
+                    Player.Restore(held);
+                    writing = false;
+                    OnLibraryChanged();
+                    if (failed.Count == 0) Toast(what + (done.Count == 1 ? " for " + done[0].Name : " for " + Theme.Count(done.Count, "song")));
+                    else
+                    {
+                        Toast(Theme.Count(failed.Count, "song") + " couldn't be changed — see the details");
+                        MessageBox.Show(this, "These couldn't be changed (nothing was damaged):\n\n" + string.Join("\n", failed.Take(15)) + (failed.Count > 15 ? "\n…" : ""), "AURA", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    }
+                }, null);
+            }) { IsBackground = true, Name = "tags" }.Start();
+        }
+
+        public void EditInfo(IList<Track> tracks)
+        {
+            if (tracks == null || tracks.Count == 0) return;
+            using (var f = new EditInfoForm(tracks.ToList(), PickCover))
+                if (f.ShowDialog(this) == DialogResult.OK) RunWrites(f.Result, "Saved");
+        }
+
+        byte[] PickCover(IList<Track> tracks)
+        {
+            var t = tracks[0];
+            string q = (t.MainArtist == "Unknown artist" ? "" : t.MainArtist + " ") + (t.Album.Length > 0 ? t.Album : LyricsOnline.CleanTitle(t.Name));
+            using (var f = new CoverFinderForm(q.Trim(), 0))
+                return f.ShowDialog(this) == DialogResult.OK ? f.Result : null;
+        }
+
+        public void FindCover(IList<Track> tracks)
+        {
+            if (tracks == null || tracks.Count == 0) return;
+            var t = tracks[0];
+            var album = tracks.Count == 1 && t.Album.Length > 0 ? Lib.Tracks.Where(x => x.AlbumKey == t.AlbumKey).ToList() : null;
+            string q = (t.MainArtist == "Unknown artist" ? "" : t.MainArtist + " ") + (t.Album.Length > 0 ? t.Album : LyricsOnline.CleanTitle(t.Name));
+            using (var f = new CoverFinderForm(q.Trim(), album?.Count ?? 0))
+            {
+                if (f.ShowDialog(this) != DialogResult.OK || f.Result == null) return;
+                var targets = f.WholeAlbum && album != null ? album : tracks.ToList();
+                RunWrites(targets.Where(x => TagWriter.CanWrite(x.Path)).Select(x => (x, new TagEdit { Picture = f.Result })).ToList(), "Cover saved");
+            }
+        }
+
+        public void FillFromNames(IList<Track> tracks)
+        {
+            var jobs = FillJobs(tracks);
+            if (jobs.Count == 0) { Toast("Nothing to fill in — these songs already have their title, artist and number, or the file names don't say"); return; }
+            var sample = string.Join("\n", jobs.Take(6).Select(j => Path.GetFileName(j.Item1.Path) + "  →  " + string.Join(", ", new[] { j.Item2.Artist == null ? null : "artist: " + j.Item2.Artist, j.Item2.Title == null ? null : "title: " + j.Item2.Title, j.Item2.Track == null ? null : "#" + j.Item2.Track }.Where(x => x != null))));
+            if (MessageBox.Show(this, "Fill in the blanks for " + Theme.Count(jobs.Count, "song") + " from their file names?\n\n" + sample + (jobs.Count > 6 ? "\n…" : "") + "\n\nOnly empty boxes are filled.", "Fill in from file names", MessageBoxButtons.OKCancel, MessageBoxIcon.Question) != DialogResult.OK) return;
+            RunWrites(jobs, "Filled in");
+        }
+
+        internal static List<(Track, TagEdit)> FillJobs(IList<Track> tracks)
+        {
+            var jobs = new List<(Track, TagEdit)>();
+            foreach (var t in tracks.Where(x => TagWriter.CanWrite(x.Path)))
+            {
+                var (artist, title, track) = Editing.FromName(t.Path);
+                var e = new TagEdit();
+                if (t.Title.Trim().Length == 0 && title.Length > 0) e.Title = title;
+                if (t.Artist.Trim().Length == 0 && artist.Length > 0) e.Artist = artist;
+                if (t.TrackNo == 0 && track > 0) e.Track = track.ToString();
+                if (e.Any) jobs.Add((t, e));
+            }
+            return jobs;
+        }
+
+        public void RenameFiles(IList<Track> tracks)
+        {
+            if (tracks == null || tracks.Count == 0) return;
+            using (var f = new RenameForm(tracks.ToList(), Prefs.RenamePattern))
+            {
+                if (f.ShowDialog(this) != DialogResult.OK) return;
+                Prefs.RenamePattern = f.Pattern; Prefs.Save();
+                var held = Player.Release(tracks.Select(t => t.Id).ToList());
+                int done = 0; var failed = new List<string>();
+                foreach (var t in tracks)
+                {
+                    var name = Editing.NameFor(t, f.Pattern);
+                    if (name == null || name == Path.GetFileName(t.Path)) continue;
+                    var to = Path.Combine(Path.GetDirectoryName(t.Path) ?? "", name);
+                    if (FileX.Exists(to) && !string.Equals(to, t.Path, StringComparison.OrdinalIgnoreCase)) { failed.Add(Path.GetFileName(t.Path) + ": " + name + " already exists"); continue; }
+                    try { Lib.Rename(t, to); done++; }
+                    catch (Exception x) { failed.Add(Path.GetFileName(t.Path) + ": " + x.Message); App.Log("rename " + t.Path + ": " + x); }
+                }
+                Player.Restore(held);
+                OnLibraryChanged();
+                Toast(failed.Count == 0 ? "Renamed " + Theme.Count(done, "file") : "Renamed " + done + ", " + failed.Count + " couldn't be");
+                if (failed.Count > 0) MessageBox.Show(this, string.Join("\n", failed.Take(15)), "Some files weren't renamed", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
         }
 
         public void InstallUpdate()
@@ -391,15 +532,26 @@ namespace Aura
                 var qi = ctx.QueueIndexes.OrderByDescending(k => k).ToList();
                 m.Items.Add(Menus.Item("Remove from up next", () => { foreach (var k in qi) Player.RemoveUpNext(k); }));
             }
+            m.Items.Add(new ToolStripSeparator());
+            m.Items.Add(Menus.Item(one != null ? "Edit info…" : "Edit info for " + tracks.Count + " songs…", () => EditInfo(tracks)));
+            m.Items.Add(Menus.Item("Find a cover…", () => FindCover(tracks)));
+            var more = Menus.Item("More", null);
+            Menus.Sub(more);
+            more.DropDownItems.Add(Menus.Item("Fill in blanks from file names", () => FillFromNames(tracks)));
+            more.DropDownItems.Add(Menus.Item("Rename files…", () => RenameFiles(tracks)));
+            if (one != null) more.DropDownItems.Add(Menus.Item("Find lyrics…", () => FindLyrics(one)));
+            m.Items.Add(more);
             if (one != null)
             {
+                var versions = Lib.VersionsOf(one);
+                if (versions.Count > 1) m.Items.Add(Menus.Item("Versions (" + versions.Count + ")", () => Go(new Route("version", Library.VersionKey(one)))));
                 m.Items.Add(new ToolStripSeparator());
                 m.Items.Add(Menus.Item("Go to artist", () => Go(new Route("artist", one.MainArtist.ToLowerInvariant()))));
                 if (one.Album.Length > 0) m.Items.Add(Menus.Item("Go to album", () => Go(new Route("album", one.AlbumKey))));
                 m.Items.Add(Menus.Item("Show in folder", () =>
                 {
                     try { Process.Start("explorer.exe", "/select,\"" + one.Path + "\""); } catch (Exception e) { Toast("Couldn't open the folder: " + e.Message); }
-                }, File.Exists(one.Path)));
+                }, FileX.Exists(one.Path)));
             }
             m.Show(screen);
         }

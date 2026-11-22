@@ -1,6 +1,7 @@
 using System;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Linq;
 using System.Windows.Forms;
 
 namespace Aura
@@ -81,8 +82,9 @@ namespace Aura
             bool wide = Width >= Theme.F(860);
             float pad = Theme.F(44);
             float colW = wide ? Math.Min(Theme.F(400), Width * 0.36f) : Math.Min(Theme.F(170), Width * 0.3f);
-            float art = colW;
-            float infoH = Theme.F(170);
+            bool hasVersions = shell.Lib.VersionsOf(t).Count > 1;
+            float infoH = Theme.F(170) + (hasVersions ? Theme.F(84) : 0);
+            float art = wide ? Math.Max(Theme.F(160), Math.Min(colW, Height - infoH - Theme.F(56))) : colW;
             float top = wide ? Math.Max(Theme.F(28), (Height - art - infoH) / 2) : Theme.F(28);
             var ar = new RectangleF(pad, top, art, art);
             for (int i = 4; i >= 1; i--) Theme.Fill(g, Theme.Alpha(Color.Black, 28), new RectangleF(ar.X - i * 3, ar.Y + i * 4, ar.Width + i * 6, ar.Height + i * 4), Theme.F(14) + i * 3);
@@ -114,8 +116,31 @@ namespace Aura
             if (l != null) bx = Pill(g, "full", bx, ty + Theme.F(1), "Full screen", shell.FullScreenLyrics, false, "expand", 36, "Full-screen lyrics (F11)").Right + Theme.F(8);
             Pill(g, "find", bx, ty + Theme.F(1), l == null ? "Find lyrics" : "Other lyrics", () => shell.FindLyrics(t), false, "search", 36);
 
+            // other versions of this song: switch without losing your place
+            var versions = shell.Lib.VersionsOf(t);
+            if (hasVersions && wide)
+            {
+                float vy = ty + Theme.F(54), vx = tx;
+                Theme.Write(g, "VERSIONS", Theme.Font(11.5f, FontStyle.Regular, true), Theme.Faint, new RectangleF(vx, vy, tw, Theme.F(20)));
+                vy += Theme.F(24);
+                foreach (var v in versions.Take(8))
+                {
+                    var f = Theme.Font(12.5f);
+                    float w = Math.Min(tw, Theme.Measure(g, v.Name, f) + Theme.F(26));
+                    if (vx + w > tx + tw) { vx = tx; vy += Theme.F(36); }
+                    if (vy > Height - Theme.F(40)) break;
+                    var cr = new RectangleF(vx, vy, w, Theme.F(30));
+                    bool cur = v == t, hot = Hover("ver:" + v.Id);
+                    Theme.Fill(g, cur ? Theme.Alpha(Theme.Accent, 110) : hot ? Theme.Surface2 : Theme.Alpha(Theme.Surface, 200), cr, cr.Height / 2);
+                    Theme.Write(g, v.Name, f, cur ? Theme.Text : Theme.Sub, new RectangleF(cr.X + Theme.F(13), cr.Y, cr.Width - Theme.F(20), cr.Height));
+                    var vv = v;
+                    if (!cur) AddHit("ver:" + v.Id, cr, () => shell.Player.SwitchTo(vv), "Switch to this version at the same point");
+                    vx += w + Theme.F(8);
+                }
+            }
+
             // lyrics
-            lyricsArea = wide ? new RectangleF(ar.Right + Theme.F(70), Theme.F(70), Width - ar.Right - Theme.F(70) - pad, Height - Theme.F(100))
+            lyricsArea = wide ? new RectangleF(pad + colW + Theme.F(70), Theme.F(70), Width - pad - colW - Theme.F(70) - pad, Height - Theme.F(100))
                               : new RectangleF(pad, ty + Theme.F(70), Width - pad * 2, Height - ty - Theme.F(90));
             float hy = lyricsArea.Y - Theme.F(40);
             if (l == null)

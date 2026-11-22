@@ -14,6 +14,24 @@ namespace Aura
         [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr hWnd, int msg, IntPtr wp, IntPtr lp);
         [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
         public static readonly IntPtr Broadcast = new IntPtr(0xffff);
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern uint GetShortPathName(string longPath, System.Text.StringBuilder shortPath, uint size);
+
+        // the old-style short path (C:\MUSIC~1\SONGNA~1.MP3): no long names, no odd characters
+        public static string ShortPath(string path)
+        {
+            if (!App.IsWindows) return null;
+            try
+            {
+                var sb = new System.Text.StringBuilder(1024);
+                uint n = GetShortPathName(FileX.Long(path, true), sb, (uint)sb.Capacity);
+                if (n == 0 || n >= sb.Capacity) return null;
+                var s = sb.ToString();
+                if (s.StartsWith(@"\\?\UNC\")) s = @"\\" + s.Substring(8);
+                else if (s.StartsWith(@"\\?\")) s = s.Substring(4);
+                return s;
+            }
+            catch { return null; }
+        }
 
         public static void DarkTitle(IntPtr h)
         {

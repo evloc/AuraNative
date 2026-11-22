@@ -261,7 +261,7 @@ namespace Aura
             var bg = primary ? (hot ? Theme.Mix(Theme.Accent, Color.White, 0.12f) : Theme.Accent) : (hot ? Theme.Surface2 : Theme.Surface);
             Theme.Fill(g, bg, r, r.Height / 2);
             if (!primary) Theme.Stroke(g, Theme.Alpha(Color.White, hot ? 40 : 22), r, r.Height / 2);
-            var fg = primary ? Color.White : Theme.Text;
+            var fg = primary ? Theme.OnAccent : Theme.Text;
             if (icon != null)
             {
                 float s = Theme.F(18);
@@ -301,7 +301,7 @@ namespace Aura
                 using (var b = new SolidBrush(hot ? Theme.Mix(Theme.Accent, Color.White, 0.12f) : Theme.Accent)) g.FillPath(b, p);
             }
             float s = r.Width * 0.46f;
-            Icons.Draw(g, playing ? "pause" : "play", new RectangleF(r.X + (r.Width - s) / 2 + (playing ? 0 : s * 0.06f), r.Y + (r.Height - s) / 2, s, s), Color.White, true);
+            Icons.Draw(g, playing ? "pause" : "play", new RectangleF(r.X + (r.Width - s) / 2 + (playing ? 0 : s * 0.06f), r.Y + (r.Height - s) / 2, s, s), Theme.OnAccent, true);
             AddHit(id, r, click, tip);
             return r;
         }
