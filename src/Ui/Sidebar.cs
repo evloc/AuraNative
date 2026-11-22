@@ -13,6 +13,48 @@ namespace Aura
             this.shell = shell;
             BackColor = Theme.Side;
             Width = Theme.P(240);
+            AllowDrop = true;
+        }
+
+        // ---------- songs dropped on a playlist, Favorites or Up next ----------
+        string dropOn;
+        static System.Collections.Generic.List<long> Dropped(IDataObject d)
+        {
+            var s = d?.GetData("AuraTracks") as string;
+            return string.IsNullOrEmpty(s) ? null : s.Split(',').Select(x => long.TryParse(x, out var v) ? v : 0).Where(v => v > 0).ToList();
+        }
+        static bool Takes(string id) => id != null && (id.StartsWith("pl:") || id == "favorites" || id == "queue");
+
+        protected override void OnDragOver(DragEventArgs e)
+        {
+            base.OnDragOver(e);
+            var id = Dropped(e.Data) != null ? HitAtScreen(new Point(e.X, e.Y))?.Id : null;
+            e.Effect = Takes(id) ? DragDropEffects.Copy : DragDropEffects.None;
+            var on = Takes(id) ? id : null;
+            if (on != dropOn) { dropOn = on; HoverId = on; Invalidate(); }
+        }
+
+        protected override void OnDragLeave(EventArgs e) { base.OnDragLeave(e); dropOn = null; HoverId = null; Invalidate(); }
+
+        protected override void OnDragDrop(DragEventArgs e)
+        {
+            base.OnDragDrop(e);
+            var ids = Dropped(e.Data);
+            var id = HitAtScreen(new Point(e.X, e.Y))?.Id;
+            dropOn = null; HoverId = null; Invalidate();
+            if (ids == null || ids.Count == 0 || !Takes(id)) return;
+            string what = Theme.Count(ids.Count, "song");
+            if (id == "queue") { shell.Player.AddToQueue(ids); shell.Toast("Added " + what + " to Up next"); }
+            else if (id == "favorites")
+            {
+                foreach (var t in ids.Select(x => shell.Lib.Get(x)).Where(t => t != null && !t.Fav)) shell.Lib.SetFav(t, true);
+                shell.Toast("Added " + what + " to Favorites");
+            }
+            else if (long.TryParse(id.Substring(3), out var pid) && shell.Lib.Playlists.FirstOrDefault(p => p.Id == pid) is Playlist pl)
+            {
+                int n = shell.Lib.AddToPlaylist(pl, ids);
+                shell.Toast(n == 0 ? "Already in " + pl.Name : "Added " + Theme.Count(n, "song") + " to " + pl.Name);
+            }
         }
 
         bool On(string kind, long id = 0) => shell.Current != null && shell.Current.Kind == kind && (id == 0 || shell.Current.Id == id);
@@ -44,8 +86,10 @@ namespace Aura
             NavItem(g, ref y, "songs", "songs", "Songs", new Route("songs"), On("songs") || On("search"), shell.Lib.Tracks.Count > 0 ? shell.Lib.Tracks.Count.ToString("N0") : null);
             NavItem(g, ref y, "artists", "artist", "Artists", new Route("artists"), On("artists") || On("artist"));
             NavItem(g, ref y, "albums", "album", "Albums", new Route("albums"), On("albums") || On("album"));
+            NavItem(g, ref y, "eras", "era", "Eras", new Route("eras"), On("eras") || On("era"));
             NavItem(g, ref y, "favorites", "heart", "Favorites", new Route("favorites"), On("favorites"));
             NavItem(g, ref y, "queue", "queue", "Up next", new Route("queue"), On("queue"));
+            NavItem(g, ref y, "history", "clock", "History", new Route("history"), On("history"));
 
             y += Theme.F(10);
             using (var pen = new Pen(Theme.Hair)) g.DrawLine(pen, Theme.F(24), y, Width - Theme.F(24), y);
@@ -63,6 +107,18 @@ namespace Aura
             Theme.Write(g, "PLAYLISTS", Theme.Font(11.5f, FontStyle.Regular, true), Theme.Faint, new RectangleF(Theme.F(26), y, Theme.F(150), Theme.F(26)));
             IconButton(g, "newpl", new RectangleF(Width - Theme.F(52), y - Theme.F(2), Theme.F(30), Theme.F(30)), "plus", () => shell.NewPlaylist(), "New playlist");
             y += Theme.F(34);
+            foreach (var (key, name) in Smart)
+            {
+                string id = "sm:" + key;
+                var r = new RectangleF(Theme.F(12), y, Width - Theme.F(24), Theme.F(36));
+                bool on = shell.Current != null && shell.Current.Kind == "smart" && shell.Current.Key == key, hot = Hover(id);
+                if (on || hot) Theme.Fill(g, on ? Theme.Surface2 : Theme.Surface, r, Theme.F(9));
+                Icons.Draw(g, "spark", new RectangleF(r.X + Theme.F(14), r.Y + Theme.F(10), Theme.F(16), Theme.F(16)), on ? Theme.AccentText : Theme.Faint);
+                Theme.Write(g, name, Theme.Font(13.5f, FontStyle.Regular, on), on || hot ? Theme.Text : Theme.Sub, new RectangleF(r.X + Theme.F(40), r.Y, r.Width - Theme.F(54), r.Height));
+                var k = key;
+                AddHit(id, r, () => shell.Go(new Route("smart", k)));
+                y += Theme.F(38);
+            }
             if (shell.Lib.Playlists.Count == 0)
             {
                 var r = new RectangleF(Theme.F(26), y, Width - Theme.F(52), Theme.F(40));
@@ -103,6 +159,8 @@ namespace Aura
             Theme.Write(g, label, Theme.Font(14, FontStyle.Regular, on), scan.Running ? Theme.AccentText : on || hot ? Theme.Text : Theme.Sub, new RectangleF(r.X + Theme.F(46), r.Y, r.Width - Theme.F(56), r.Height));
             AddHit("settings", r, () => shell.Go(new Route("settings")), scan.Running ? "Looking through your music folders" : null, true);
         }
+
+        public static readonly (string key, string name)[] Smart = { ("most", "Most played"), ("recent", "Recently played"), ("added", "Recently added"), ("rated", "Top rated") };
 
         void PlaylistMenu(Playlist p, Point pt)
         {

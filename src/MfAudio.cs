@@ -157,7 +157,7 @@ namespace Aura
             catch (Exception e) { App.Log("Media Foundation couldn't open " + path + ": " + e.Message); return false; }
         }
 
-        public void Play() { wantPlay = true; sincePlay.Restart(); try { engine?.Play(); } catch { } }
+        public void Play() { wantPlay = true; sincePlay.Restart(); try { if (rate != 1) { engine?.SetDefaultPlaybackRate(rate); engine?.SetPlaybackRate(rate); } engine?.Play(); } catch { } }
         public void Pause() { wantPlay = false; try { engine?.Pause(); } catch { } }
         public void Stop() { wantPlay = false; try { engine?.Pause(); engine?.SetCurrentTime(0); } catch { } }
 
@@ -186,6 +186,8 @@ namespace Aura
         }
 
         public int Volume { set { vol = value; try { engine?.SetVolume(Curve(value)); } catch { } } }
+        double rate = 1;
+        public double Rate { set { rate = value; try { engine?.SetDefaultPlaybackRate(value); engine?.SetPlaybackRate(value); } catch { } } }
 
         public PlayState Poll()
         {

@@ -51,6 +51,7 @@ namespace Aura
             else if (script == "playback") PlaybackScript();
             else if (script == "organize") OrganizeScript();
             else if (script == "sound") SoundScript();
+            else if (script == "more") MoreScript();
             int i = 0; DateTime started = DateTime.Now; bool begun = false;
             var t = new Timer { Interval = 150 };
             t.Tick += (s, e) =>
@@ -881,9 +882,258 @@ namespace Aura
                 Ok(l != null && l.Source == "In the song file", "a run that heard nothing doesn't touch the song's lyrics (" + l?.Source + ")");
                 return true;
             });
+            // taking the vocals out first (MDX-Net through onnxruntime), then writing the words down
+            TranscribeForm tv = null;
+            Step("vocals open", () =>
+            {
+                if (Environment.GetEnvironmentVariable("AURA_ORT_LIB") == null) { Console.WriteLine("  (no onnxruntime here: skipped)"); return true; }
+                tv = new TranscribeForm(F, T("Ask Not")); floating = tv; tv.Show(F);
+                return true;
+            });
+            Step("vocals start", () => { if (tv == null) return true; if (!Pause(4)) return false; tv.TestVocals = true; tv.TestStart(true); return true; });
+            Step("vocals done", () =>
+            {
+                if (tv == null) return true;
+                if (tv.TestRunning) return false;
+                Console.WriteLine("  status: " + tv.TestStatus + "  (" + Separator.LastStats + ")");
+                Ok(Separator.LastStats.Length > 0, "the vocals were taken out before listening (" + Separator.LastStats + ")");
+                Ok(tv.TestResult != null || tv.TestStatus.Contains("no singing"), "and Whisper listened to them without crashing (" + tv.TestStatus + ")");
+                try { using (var b = new Bitmap(tv.Width, tv.Height)) { using (var g = Graphics.FromImage(b)) g.CopyFromScreen(tv.Location, Point.Empty, b.Size); b.Save(Path.Combine(outDir, "47_transcribe_vocals.png")); } } catch { }
+                if (tv.TestResult != null && tv.TestResult.Lines.Count > 1)
+                {
+                    double before = tv.TestResult.Lines[1].T;
+                    tv.TestNudge(1, 0.1);
+                    Ok(Math.Abs(tv.TestResult.Lines[1].T - before - 0.1) < 0.001, "a line can be moved by a tenth of a second while checking");
+                }
+                tv.Close();
+                return true;
+            });
             Step("settings", () => { F.Go(new Route("settings")); return true; });
             Step("settings shot", () => { if (!Pause(6)) return false; if (F.Page is Canvas c) c.ScrollTo(1000, false); return true; });
             Step("settings shot 2", () => { if (!Pause(4)) return false; Shot("46_settings_listening"); return true; });
+        }
+
+        // ratings, eras, search, undo, bookmarks, sleep, crossfade, radio, speed, trackers, folders, versions, looks
+        static void MoreScript()
+        {
+            MainForm.UiTestMode = true;
+            Track N(string file) => L.Tracks.FirstOrDefault(t => t.Path.EndsWith(file));
+            Step("scan", () => !L.Scan.Running && L.Tracks.Count >= 13 && Pause(4));
+            Step("found", () => { Ok(L.Tracks.Count == 13, "13 songs (" + L.Tracks.Count + ")"); return true; });
+            // ---- search
+            Step("search", () =>
+            {
+                int C(string q) { var sq = new SearchQuery(q, L, F.Sound); return L.Tracks.Count(sq.Matches); }
+                Ok(C("artist:\"other guy\"") == 2, "artist:\"other guy\" finds both of his songs (" + C("artist:\"other guy\"") + ")");
+                Ok(C("juice -lucid -robbery") == C("artist:juice") - 3 || C("juice -lucid -robbery") > 0, "-word leaves songs out (" + C("juice -lucid -robbery") + ")");
+                Ok(C("year:>=2019") == L.Tracks.Count(t => t.Year.StartsWith("2019") || t.Year.StartsWith("202")), "year:>=2019 compares numbers (" + C("year:>=2019") + ")");
+                Ok(C("album:\"goodbye & good\"") == 3, "album: with a phrase (" + C("album:\"goodbye & good\"") + ")");
+                Ok(C("noart") == L.Tracks.Count(t => !t.HasArt), "noart");
+                L.IndexLyrics(N("a.mp3"), "I still see your shadows in my room");
+                Ok(C("shadows in my room") == 1 && C("lyrics:shadows") == 1, "a line of the lyrics finds the song");
+                F.Go(new Route("search", "shadows in my room"));
+                return true;
+            });
+            Step("search shot", () => { if (!Pause(5)) return false; Ok(TP != null && TP.RowCount == 1, "the search page shows it"); Shot("80_search_lyrics"); return true; });
+            // ---- ratings and smart playlists
+            Step("rate", () =>
+            {
+                L.SetRating(new[] { N("a.mp3") }, 5); L.SetRating(new[] { N("e.ogg") }, 4); L.SetRating(new[] { N("b.wav") }, 2);
+                var sq = new SearchQuery("rating:>=4", L, F.Sound);
+                Ok(L.Tracks.Count(sq.Matches) == 2, "rating:>=4 finds the two good ones");
+                F.Go(new Route("smart", "rated"));
+                return true;
+            });
+            Step("rated page", () => { if (!Pause(5)) return false; Ok(TP != null && TP.RowCount == 2, "the Top rated smart playlist has them (" + TP?.RowCount + ")"); Shot("81_top_rated"); return true; });
+            Step("rating survives", () =>
+            {
+                var r = L.Db.Scalar("SELECT stars FROM ratings WHERE track_id=?", N("a.mp3").Id);
+                Ok(Conv.L(r) == 5, "ratings are saved");
+                return true;
+            });
+            // ---- eras
+            Step("eras", () =>
+            {
+                L.SetEra(new[] { N("a.mp3"), N("h_cbr.mp3") }, "GBGR");
+                Ok(L.Eras().Count == 1 && L.Eras()[0].Tracks.Count == 2, "an era with two songs");
+                F.Go(new Route("eras"));
+                return true;
+            });
+            Step("eras shot", () => { if (!Pause(5)) return false; Shot("82_eras"); F.Go(new Route("era", "GBGR")); return true; });
+            Step("era page", () => { if (!Pause(5)) return false; Ok(TP != null && TP.RowCount == 2, "the era's page lists its songs"); Shot("83_era"); return true; });
+            // ---- undo
+            Step("edit title", () => { F.RunWrites(new List<(Track, TagEdit)> { (N("b.wav"), new TagEdit { Title = "Night Drive (oops)" }) }, "Edited"); return true; });
+            Step("edited", () =>
+            {
+                if (F.Writing) return false;
+                Ok(N("b.wav").Title == "Night Drive (oops)", "the title changed");
+                Ok(L.UndoSteps().Count > 0 && L.UndoSteps()[0].Label == "Edited", "and the change can be undone (" + L.UndoSteps().FirstOrDefault()?.Label + ")");
+                F.UndoLast();
+                return true;
+            });
+            Step("undone", () =>
+            {
+                if (F.Writing || !Pause(3)) return false;
+                Ok(N("b.wav").Title == "Night Drive" && Tags.Read(N("b.wav").Path).Title == "Night Drive", "Undo puts the old title back in the file (" + N("b.wav").Title + ")");
+                return true;
+            });
+            Step("undo era", () =>
+            {
+                L.SetEra(new[] { N("a.mp3") }, "Wrong era");
+                F.UndoLast();
+                return true;
+            });
+            Step("era undone", () => { if (F.Writing || !Pause(3)) return false; Ok(N("a.mp3").Era == "GBGR", "Undo puts an era back too (" + N("a.mp3").Era + ")"); return true; });
+            // ---- bookmarks
+            Step("bookmarks", () =>
+            {
+                var t = N("e.ogg");
+                L.AddBookmark(t, 12.3); L.AddBookmark(t, 12.8); L.AddBookmark(t, 30);
+                Ok(L.BookmarksOf(t.Id).Count == 2, "bookmarks (one too close to another is skipped) (" + L.BookmarksOf(t.Id).Count + ")");
+                P.PlayList(new List<long> { t.Id });
+                F.Go(new Route("now"));
+                return true;
+            });
+            Step("bookmarks shot", () => { if (!Pause(8)) return false; Shot("84_now_playing_bookmarks"); return true; });
+            // ---- speed
+            Step("speed", () => { P.Rate = 1.25; Ok(Math.Abs(TestAudio.LastRate - 1.25) < 0.001, "playback speed reaches the player"); P.Rate = 1; return true; });
+            // ---- history
+            Step("history", () =>
+            {
+                L.RecordPlay(N("d.m4a"));
+                Ok(L.History(10).Any(h => h.t == N("d.m4a")), "played songs show up in History");
+                F.Go(new Route("history"));
+                return true;
+            });
+            Step("history shot", () => { if (!Pause(5)) return false; Ok(TP != null && TP.RowCount >= 1, "the History page lists them"); Shot("85_history"); return true; });
+            // ---- sleep timer: stop after this song
+            Step("sleep", () =>
+            {
+                P.PlayList(new List<long> { N("d.m4a").Id, N("e.ogg").Id });
+                P.SetSleep(-1);
+                Ok(P.Sleeping && P.SleepAfterSong, "the sleep timer is set to the end of the song");
+                return true;
+            });
+            Step("sleep seek", () => { if (!Pause(4)) return false; P.Seek(P.Duration - 1.5); return true; });
+            Step("slept", () =>
+            {
+                if (!Pause(25)) return false;
+                Ok(!P.IsPlaying && P.Current?.Id == N("d.m4a").Id && !P.Sleeping, "the music stops at the end of the song instead of going on (" + P.Current?.Name + ", playing " + P.IsPlaying + ")");
+                return true;
+            });
+            // ---- crossfade
+            Step("crossfade", () =>
+            {
+                P.Between = 3;
+                P.PlayList(new List<long> { N("d.m4a").Id, N("e.ogg").Id });
+                return true;
+            });
+            Step("crossfade seek", () => { if (!Pause(4)) return false; P.Seek(P.Duration - 5); return true; });
+            Step("crossfaded", () =>
+            {
+                if (P.Current?.Id != N("e.ogg").Id) return false;
+                Ok(P.IsPlaying && P.Position < 3.5, "with a 3 s crossfade the next song is already playing when the first ends (" + P.Position.ToString("0.0") + " s in)");
+                P.Between = 0;
+                return true;
+            });
+            // ---- radio
+            Step("radio", () => { P.Radio = true; P.PlayList(new List<long> { N("i_vbr.mp3").Id }); return true; });
+            Step("radio seek", () => { if (!Pause(4)) return false; P.Seek(P.Duration - 1); return true; });
+            Step("radio goes on", () =>
+            {
+                if (!Pause(20)) return false;
+                Ok(P.IsPlaying && P.Current?.Id != N("i_vbr.mp3").Id && P.Queue.Count > 1, "radio keeps going with more songs when Up next runs out (" + P.Current?.Name + ", " + P.Queue.Count + " in the queue)");
+                P.Radio = false; P.Toggle();
+                return true;
+            });
+            // ---- fan trackers
+            Step("tracker csv", () =>
+            {
+                var sh = Tracker.Load(File.ReadAllBytes("/tmp/claude-0/n8/tracker.csv"), "tracker.csv");
+                var map = Tracker.GuessMapping(sh.Headers);
+                Ok(map.ContainsKey("name") && map.ContainsKey("era") && map.ContainsKey("producer"), "the header row is found under the title banner (" + string.Join(",", sh.Headers) + ")");
+                var items = Tracker.Items(sh, map);
+                Ok(items.Count == 4 && items[0].Main == "Lucid Dreams" && items[0].Producer == "Nick Mira" && items[0].Alts.Contains("Forget Me"), "names are split into title, other names and producer (" + items[0].Main + " / " + string.Join(",", items[0].Alts) + " / " + items[0].Producer + ")");
+                var props = Tracker.Match(items, L.Tracks, L, true, true, true, true, false, out int unmatched);
+                foreach (var p in props) Console.WriteLine("  " + p.Track.Name + " <- " + p.Item.Raw + " era=" + p.Era + " year=" + p.Year + " title=" + p.Title + " info=" + p.Info);
+                var lucid = props.FirstOrDefault(p => p.Track == N("a.mp3"));
+                Ok(lucid != null && lucid.Era == null && lucid.Info != null && lucid.Info.Contains("Nick Mira"), "Lucid Dreams keeps its era (already set) and gets the producer note");
+                var demo = props.FirstOrDefault(p => p.Track == N("f.opus"));
+                Ok(demo != null && demo.Era == "Outsiders" && demo.Year == "2019", "a song with no year or era gets both (" + demo?.Era + " " + demo?.Year + ")");
+                Ok(!props.Any(p => p.Track == N("b.wav") && p.Era != null && p.Year != null && p.Year != "2021"), "a song's own year is left alone");
+                return true;
+            });
+            TrackerForm trf = null;
+            Step("tracker xlsx", () =>
+            {
+                var sh = Tracker.Load(File.ReadAllBytes("/tmp/claude-0/n8/tracker.xlsx"), "tracker.xlsx");
+                Ok(sh.Rows.Count == 2 && sh.Headers.Last() == "Sheet", "both tabs of the workbook are read (" + sh.Rows.Count + " rows)");
+                Ok(sh.Rows.Any(r => r.Contains("2018-04-02")), "dates in the sheet come out as dates (" + string.Join(" | ", sh.Rows[0]) + ")");
+                trf = new TrackerForm(F, null); floating = trf; trf.Show(F);
+                trf.TestLoad(sh);
+                return true;
+            });
+            Step("tracker form", () =>
+            {
+                if (!Pause(4)) return false;
+                var props = trf.TestProps;
+                Ok(props.Any(p => p.Track == N("i_vbr.mp3") && p.Era == "JW 999") && props.Any(p => p.Track == N("h_cbr.mp3") && p.Info != null), "the tab name is used as the era (" + props.Count + " changes)");
+                try { using (var b = new Bitmap(trf.Width, trf.Height)) { using (var g = Graphics.FromImage(b)) g.CopyFromScreen(trf.Location, Point.Empty, b.Size); b.Save(Path.Combine(outDir, "86_tracker.png")); } } catch { }
+                trf.TestApply();
+                return true;
+            });
+            Step("tracker applied", () =>
+            {
+                if (F.Writing || !Pause(3)) return false;
+                Ok(N("i_vbr.mp3").Era == "JW 999" && L.InfoOf(N("i_vbr.mp3")).Contains("Recorded 2018-04-02"), "the tracker's era and notes are saved (" + L.InfoOf(N("i_vbr.mp3")) + ")");
+                var sq = new SearchQuery("prod:\"nick mira\"", L, F.Sound);
+                Ok(L.Tracks.Count(sq.Matches) >= 2, "prod: finds songs by producer");
+                trf.Close();
+                return true;
+            });
+            // ---- fill in from folders
+            Step("folders", () =>
+            {
+                var t = N("05 - Righteous.mp3");
+                var jobs = MainForm.FillJobs(new List<Track> { t }, F.Prefs.Folders);
+                var e = jobs.FirstOrDefault().Item2;
+                Ok(e != null && e.Title == "Righteous" && e.Artist == "Juice WRLD" && e.Album == "Legends Never Die" && e.Year == "2020" && e.Track == "5",
+                    "Music/Juice WRLD/Legends Never Die (2020)/05 - Righteous.mp3 fills in artist, album, year, number and title (" + e?.Artist + " / " + e?.Album + " / " + e?.Year + " / " + e?.Track + " / " + e?.Title + ")");
+                var top = MainForm.FillJobs(new List<Track> { N("Lucid Dreams [CDQ].mp3") }, F.Prefs.Folders).FirstOrDefault().Item2;
+                Ok(top == null || top.Artist == "Other", "a song right in a folder under Music takes that folder as its artist (" + top?.Artist + ")");
+                return true;
+            });
+            // ---- versions
+            Step("versions", () =>
+            {
+                var sug = L.SuggestedVersions();
+                foreach (var g in sug) Console.WriteLine("  maybe: " + string.Join(", ", g.Select(t => t.Name + "/" + t.Artist)));
+                Ok(sug.Any(g => g.Contains(N("a.mp3")) && g.Contains(N("Lucid Dreams [CDQ].mp3"))), "Lucid Dreams with and without an artist is suggested as versions");
+                var titles = Library.VersionTitles("Robbery", new List<Track> { N("c.flac"), N("03 - Juice WRLD - Robbery (v2).mp3") });
+                Ok(titles[N("c.flac").Id] == "Robbery" && titles[N("03 - Juice WRLD - Robbery (v2).mp3").Id] == "Robbery (v2)", "clear version titles (" + string.Join(", ", titles.Values) + ")");
+                var inFull = L.NowInFull();
+                Ok(inFull.Any(x => x.Full == N("e.ogg") && x.Snippets.Contains(N("Empty [Snippet].mp3"))), "a snippet of a song you now have in full is noticed");
+                L.GroupVersions(new[] { N("a.mp3"), N("Lucid Dreams [CDQ].mp3") }, "Lucid Dreams");
+                Ok(L.VersionsOf(N("a.mp3")).Count == 2, "grouped by hand");
+                F.Go(new Route("versions"));
+                return true;
+            });
+            Step("versions shot", () => { if (!Pause(6)) return false; Shot("87_versions"); return true; });
+            Step("not versions", () =>
+            {
+                var key = Library.VersionKey(N("a.mp3"));
+                L.MarkNotVersions(key);
+                Ok(L.VersionsOf(N("a.mp3")).Count == 1 && !L.VersionGroups().Any(g => g.Contains(N("a.mp3"))), "\"not versions\" splits them up for good");
+                return true;
+            });
+            // ---- settings and looks
+            Step("settings", () => { F.Go(new Route("settings")); return true; });
+            Step("settings 1", () => { if (!Pause(5)) return false; if (F.Page is Canvas c) c.ScrollTo(560, false); return true; });
+            Step("settings 2", () => { if (!Pause(4)) return false; Shot("88_settings_sound"); if (F.Page is Canvas c) c.ScrollTo(1500, false); return true; });
+            Step("settings 3", () => { if (!Pause(4)) return false; Shot("89_settings_lyrics_undo"); F.ApplyTheme("Light"); F.Go(new Route("songs")); return true; });
+            Step("light", () => { if (!Pause(6)) return false; Ok(Theme.IsLight && Theme.Bg.GetBrightness() > 0.9f, "the light theme"); Shot("90_light_songs"); F.Go(new Route("now")); return true; });
+            Step("light now", () => { if (!Pause(6)) return false; Shot("91_light_now"); F.ApplyTheme("Midnight"); return true; });
+            Step("dark again", () => { if (!Pause(3)) return false; Ok(!Theme.IsLight, "and back"); return true; });
         }
 
         static void Resume()

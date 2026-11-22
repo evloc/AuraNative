@@ -121,7 +121,7 @@ namespace Aura
         {
             var r = ThumbRect();
             bool hot = draggingThumb || (MouseAt.X >= Width - Theme.P(14) && MouseAt.X <= Width);
-            Theme.Fill(g, Theme.Alpha(Color.White, hot ? 90 : 38), r, r.Width / 2);
+            Theme.Fill(g, Theme.Alpha(Theme.Ink, hot ? 90 : 38), r, r.Width / 2);
         }
 
         // ---------- hits ----------
@@ -147,6 +147,9 @@ namespace Aura
         }
 
         protected PointF ToContent(Point p) => new PointF(p.X, p.Y + Offset);
+        // a drag left the window (DoDragDrop): forget the press
+        protected void EndPress() { pressed = null; Capture = false; }
+        protected Hit HitAtScreen(Point screen) => HitAt(PointToClient(screen));
 
         protected override void OnMouseMove(MouseEventArgs e)
         {
@@ -284,7 +287,7 @@ namespace Aura
             bool hot = Hover(id);
             var bg = primary ? (hot ? Theme.Mix(Theme.Accent, Color.White, 0.12f) : Theme.Accent) : (hot ? Theme.Surface2 : Theme.Surface);
             Theme.Fill(g, bg, r, r.Height / 2);
-            if (!primary) Theme.Stroke(g, Theme.Alpha(Color.White, hot ? 40 : 22), r, r.Height / 2);
+            if (!primary) Theme.Stroke(g, Theme.Alpha(Theme.Ink, hot ? 40 : 22), r, r.Height / 2);
             var fg = primary ? Theme.OnAccent : Theme.Text;
             if (icon != null)
             {

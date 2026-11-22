@@ -207,7 +207,9 @@ namespace Aura
                 case Keys.MediaPlayPause: Player.Toggle(); return true;
                 case Keys.MediaNextTrack: Player.Next(); return true;
                 case Keys.MediaPreviousTrack: Player.Prev(); return true;
+                case Keys.Control | Keys.Z: if (!typing) { UndoLast(); return true; } break;
             }
+            if (!typing && ListenKey(key)) return true;
             return base.ProcessCmdKey(ref msg, key);
         }
 
@@ -259,7 +261,7 @@ namespace Aura
                 case "versions": page = new VersionsPage(this); break;
                 case "duplicates": page = new DuplicatesPage(this); break;
                 case "stats": page = new StatsPage(this); break;
-                case "artists": case "albums": page = new GridPage(this, r); break;
+                case "artists": case "albums": case "eras": page = new GridPage(this, r); break;
                 case "settings":
                     {
                         var sp = new SettingsPage(this);
@@ -302,12 +304,28 @@ namespace Aura
             }
         }
 
-        void OnLibraryChanged()
+        internal void OnLibraryChanged()
         {
             Player.Relink();
             Sound.LibraryChanged();
             ReloadPage();
             Side.Invalidate(); Bar.Invalidate(); Head.Invalidate();
+            if (!Lib.Scan.Running) TellInFull();
+        }
+
+        // a song you only had snippets of is here in full: say so once
+        void TellInFull()
+        {
+            try
+            {
+                var news = Lib.NowInFull().Where(x => !x.Told).ToList();
+                if (news.Count == 0) return;
+                foreach (var n in news) Lib.ToldInFull(n.Full);
+                var a = news[0];
+                Toast(news.Count == 1 ? "“" + LyricsOnline.CleanTitle(a.Full.Name) + "” is here in full — you had " + Theme.Count(a.Snippets.Count, "snippet") + " of it (see Versions)"
+                                      : Theme.Count(news.Count, "song") + " you had snippets of are here in full (see Versions)");
+            }
+            catch (Exception e) { App.Log("in full: " + e.Message); }
         }
 
         // a new theme: recolor the window and draw the page again
@@ -315,7 +333,7 @@ namespace Aura
         {
             Theme.Apply(name);
             var p = Theme.Palettes.First(x => x.Name == Theme.ThemeName);
-            Prefs.ThemeName = p.Name; Prefs.Accent = p.Accent;
+            Prefs.ThemeName = name == "Match Windows" ? name : p.Name; Prefs.Accent = p.Accent;
             BackColor = Theme.Side; Side.BackColor = Theme.Side; Bar.BackColor = Theme.Bar; Head.BackColor = Theme.Bg;
             host.BackColor = Theme.Bg; if (host.Parent != null) host.Parent.BackColor = Theme.Bg;
             Head.Search.BackColor = Theme.Surface; Head.Search.ForeColor = Theme.Text;
@@ -363,11 +381,16 @@ namespace Aura
 
         // writes tags in the background; the player lets go of a song while it's changed
         internal bool Writing => writing;
-        internal void RunWrites(List<(Track t, TagEdit e)> jobs, string what)
+        internal void RunWrites(List<(Track t, TagEdit e)> jobs, string what, bool undo = true)
         {
+            if (!undo) undoing = true;
             if (jobs.Count == 0) return;
             if (writing) { Toast("AURA is still saving the last change — try again in a moment"); return; }
             writing = true;
+            // written down first, so Undo can put the old tags back
+            var textJobs = jobs.Where(j => j.e.Title != null || j.e.Artist != null || j.e.Album != null || j.e.AlbumArtist != null || j.e.Year != null || j.e.Genre != null || j.e.Track != null).Select(j => j.t).ToList();
+            if (textJobs.Count > 0 && !undoing) try { Lib.SaveUndo(what, textJobs); } catch (Exception x) { App.Log("undo snapshot: " + x.Message); }
+            undoing = false;
             var held = Player.Release(jobs.Select(j => j.t.Id).ToList());
             var failed = new List<string>();
             var done = new List<Track>();
@@ -403,7 +426,11 @@ namespace Aura
         {
             if (tracks == null || tracks.Count == 0) return;
             using (var f = new EditInfoForm(tracks.ToList(), PickCover))
-                if (f.ShowDialog(this) == DialogResult.OK) RunWrites(f.Result, "Saved");
+                if (f.ShowDialog(this) == DialogResult.OK)
+                {
+                    if (f.EraResult != null) Lib.SetEra(tracks, f.EraResult);
+                    if (f.Result.Count > 0) RunWrites(f.Result, "Saved"); else if (f.EraResult != null) { Toast("Saved"); OnLibraryChanged(); }
+                }
         }
 
         byte[] PickCover(IList<Track> tracks)
@@ -430,16 +457,18 @@ namespace Aura
 
         public void FillFromNames(IList<Track> tracks)
         {
-            var jobs = FillJobs(tracks);
+            var jobs = FillJobs(tracks, Prefs.Folders);
             if (jobs.Count == 0) { Toast("Nothing to fill in — these songs already have their title, artist and number, or the file names don't say"); return; }
-            var sample = string.Join("\n", jobs.Take(6).Select(j => Path.GetFileName(j.Item1.Path) + "  →  " + string.Join(", ", new[] { j.Item2.Artist == null ? null : "artist: " + j.Item2.Artist, j.Item2.Title == null ? null : "title: " + j.Item2.Title, j.Item2.Track == null ? null : "#" + j.Item2.Track }.Where(x => x != null))));
-            if (MessageBox.Show(this, "Fill in the blanks for " + Theme.Count(jobs.Count, "song") + " from their file names?\n\n" + sample + (jobs.Count > 6 ? "\n…" : "") + "\n\nOnly empty boxes are filled.", "Fill in from file names", MessageBoxButtons.OKCancel, MessageBoxIcon.Question) != DialogResult.OK) return;
+            var sample = string.Join("\n", jobs.Take(6).Select(j => Path.GetFileName(j.Item1.Path) + "  →  " + string.Join(", ", new[] { j.Item2.Artist == null ? null : "artist: " + j.Item2.Artist, j.Item2.Title == null ? null : "title: " + j.Item2.Title, j.Item2.Track == null ? null : "#" + j.Item2.Track, j.Item2.Album == null ? null : "album: " + j.Item2.Album, j.Item2.Year == null ? null : "year: " + j.Item2.Year }.Where(x => x != null))));
+            if (MessageBox.Show(this, "Fill in the blanks for " + Theme.Count(jobs.Count, "song") + " from their file and folder names?\n\n" + sample + (jobs.Count > 6 ? "\n…" : "") + "\n\nOnly empty boxes are filled.", "Fill in from file names", MessageBoxButtons.OKCancel, MessageBoxIcon.Question) != DialogResult.OK) return;
             RunWrites(jobs, "Filled in");
         }
 
-        internal static List<(Track, TagEdit)> FillJobs(IList<Track> tracks)
+        internal static List<(Track, TagEdit)> FillJobs(IList<Track> tracks, IList<string> roots = null)
         {
             var jobs = new List<(Track, TagEdit)>();
+            string Norm(string p) => (p ?? "").TrimEnd('\\', '/').ToLowerInvariant();
+            var rootSet = new HashSet<string>((roots ?? new List<string>()).Select(Norm));
             foreach (var t in tracks.Where(x => TagWriter.CanWrite(x.Path)))
             {
                 var (artist, title, track) = Editing.FromName(t.Path);
@@ -447,6 +476,24 @@ namespace Aura
                 if (t.Title.Trim().Length == 0 && title.Length > 0) e.Title = title;
                 if (t.Artist.Trim().Length == 0 && artist.Length > 0) e.Artist = artist;
                 if (t.TrackNo == 0 && track > 0) e.Track = track.ToString();
+                // the folders: Music/Artist/Album/song or Music/Artist/song (only below one of your music folders)
+                var dir = Path.GetDirectoryName(t.Path) ?? "";
+                var up = Path.GetDirectoryName(dir) ?? "";
+                if (rootSet.Count > 0 && !rootSet.Contains(Norm(dir)))
+                {
+                    bool twoDeep = !rootSet.Contains(Norm(up)) && rootSet.Contains(Norm(Path.GetDirectoryName(up)));
+                    string dirName = Path.GetFileName(dir), upName = Path.GetFileName(up);
+                    string knownArtist = t.Artist.Trim().Length > 0 ? t.Artist : e.Artist ?? "";
+                    if (twoDeep)
+                    {
+                        var m = System.Text.RegularExpressions.Regex.Match(dirName, @"^(?:(\d{4})\s*[-–]\s*)?(.+?)(?:\s*[\(\[](\d{4})[\)\]])?$");
+                        string album = m.Success ? m.Groups[2].Value.Trim() : dirName, year = m.Groups[1].Success ? m.Groups[1].Value : m.Groups[3].Success ? m.Groups[3].Value : "";
+                        if (t.Album.Trim().Length == 0 && album.Length > 0) e.Album = album;
+                        if (t.Year.Trim().Length == 0 && year.Length > 0) e.Year = year;
+                        if (knownArtist.Length == 0 && upName.Length > 0) e.Artist = upName;
+                    }
+                    else if (rootSet.Contains(Norm(up)) && knownArtist.Length == 0 && dirName.Length > 0) e.Artist = dirName;
+                }
                 if (e.Any) jobs.Add((t, e));
             }
             return jobs;
@@ -561,6 +608,7 @@ namespace Aura
             m.Items.Add(add);
             bool allFav = tracks.All(t => t.Fav);
             m.Items.Add(Menus.Item(allFav ? "Remove from Favorites" : "Add to Favorites", () => { foreach (var t in tracks) Lib.SetFav(t, !allFav); }));
+            m.Items.Add(RateMenu(tracks));
             if (ctx?.Playlist != null && ctx.Removed != null)
                 m.Items.Add(Menus.Item("Remove from this playlist", ctx.Removed));
             if (ctx != null && ctx.Queue && ctx.QueueIndexes != null)
@@ -574,6 +622,9 @@ namespace Aura
             var more = Menus.Item("More", null);
             Menus.Sub(more);
             more.DropDownItems.Add(Menus.Item("Fill in blanks from file names", () => FillFromNames(tracks)));
+            more.DropDownItems.Add(Menus.Item("Set era…", () => AskEra(tracks)));
+            more.DropDownItems.Add(Menus.Item("Fill in from a fan tracker…", () => ImportTracker(tracks.ToList())));
+            if (tracks.Count > 1) more.DropDownItems.Add(Menus.Item("Group as versions…", () => GroupAsVersions(tracks)));
             more.DropDownItems.Add(Menus.Item("Rename files…", () => RenameFiles(tracks)));
             var wrong = tracks.Take(200).Select(t => (t, k: AudioKind.Detect(t.Path))).Where(x => x.k != null && !AudioKind.Matches(x.t.Path, x.k)).ToList();
             if (wrong.Count > 0)
@@ -585,6 +636,8 @@ namespace Aura
             {
                 more.DropDownItems.Add(new ToolStripSeparator());
                 more.DropDownItems.Add(Menus.Item("Write lyrics in time (auto-sync / transcribe)…", () => Transcribe(one)));
+                more.DropDownItems.Add(Menus.Item("Time the lyrics by hand…", () => SyncByHand(one)));
+                more.DropDownItems.Add(Menus.Item("Edit lyrics…", () => EditLyrics(one)));
             }
             m.Items.Add(more);
             if (one != null)

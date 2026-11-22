@@ -119,6 +119,11 @@ namespace Aura
             g.DrawImageUnscaled(backdrop, 0, 0);
         }
 
+        protected override void OnPaint(System.Windows.Forms.PaintEventArgs e)
+        {
+            using (Theme.Dark()) base.OnPaint(e);
+        }
+
         protected override void Draw(Graphics g, RectangleF view)
         {
             var t = shell.Player.Current;
@@ -139,7 +144,7 @@ namespace Aura
             float pad = Theme.F(44);
             float colW = wide ? Math.Min(Theme.F(400), Width * 0.36f) : Math.Min(Theme.F(170), Width * 0.3f);
             bool hasVersions = shell.Lib.VersionsOf(t).Count > 1;
-            float infoH = Theme.F(170) + (hasVersions ? Theme.F(84) : 0);
+            float infoH = Theme.F(196) + (hasVersions ? Theme.F(84) : 0);
             float art = wide ? Math.Max(Theme.F(160), Math.Min(colW, H - infoH - Theme.F(56))) : colW;
             float top = wide ? Math.Max(Theme.F(28), (H - art - infoH) / 2) : Theme.F(28);
             var ar = new RectangleF(pad, top, art, art);
@@ -164,6 +169,27 @@ namespace Aura
                 Theme.Write(g, t.Album, Theme.Font(13.5f), Hover("album") ? Theme.Text : Theme.Faint, alr);
                 AddHit("album", alr, () => shell.Go(new Route("album", t.AlbumKey)));
             }
+            // rating: click a star (click the same one again to clear)
+            ty += Theme.F(26);
+            for (int i = 1; i <= 5; i++)
+            {
+                int n = i;
+                var sr = new RectangleF(tx + (i - 1) * Theme.F(22), ty, Theme.F(20), Theme.F(20));
+                bool lit = (hoverStar > 0 ? hoverStar : t.Rating) >= i;
+                Icons.Draw(g, "star", sr, lit ? Theme.AccentText : Theme.Faint, lit);
+                var hs = AddHit("star:" + i, RectangleF.Inflate(sr, 1, 2), () => shell.Lib.SetRating(new[] { t }, t.Rating == n ? 0 : n), n + (n == 1 ? " star" : " stars") + " (keys 1–5)");
+            }
+            hoverStar = 0;
+            for (int i = 1; i <= 5; i++) if (Hover("star:" + i)) hoverStar = i;
+            // the era, and notes from a fan tracker (producer, dates)
+            var extra = string.Join("  ·  ", new[] { t.Era, shell.Lib.InfoOf(t) }.Where(x => !string.IsNullOrEmpty(x)));
+            if (extra.Length > 0)
+            {
+                var er = new RectangleF(tx + Theme.F(124), ty, tw - Theme.F(124), Theme.F(22));
+                Theme.Write(g, extra, Theme.Font(12.5f), Theme.Faint, er);
+                var era0 = t.Era;
+                AddHit("eraline", er, era0.Length > 0 ? () => shell.Go(new Route("era", era0)) : (Action)null, extra.Length > 60 ? extra : null);
+            }
             ty += Theme.F(40);
             float bx = tx;
             IconButton(g, "fav", new RectangleF(bx, ty, Theme.F(38), Theme.F(38)), "heart", () => shell.Lib.SetFav(t, !t.Fav), t.Fav ? "Remove from Favorites" : "Add to Favorites", t.Fav, filled: t.Fav, circleBg: true, dot: false);
@@ -172,7 +198,13 @@ namespace Aura
             if (l != null) bx = Pill(g, "full", bx, ty + Theme.F(1), "Full screen", shell.FullScreenLyrics, false, "expand", 36, "Full-screen lyrics (F11)").Right + Theme.F(8);
             bx = Pill(g, "find", bx, ty + Theme.F(1), l == null ? "Find lyrics" : "Other lyrics", () => shell.FindLyrics(t), false, "search", 36).Right + Theme.F(8);
             if (l == null || !l.ByWord)
+            {
                 IconButton(g, "sync", new RectangleF(bx, ty, Theme.F(38), Theme.F(38)), "wave", () => shell.Transcribe(t), l == null ? "Write the lyrics down by listening" : "Time these lyrics to the song (auto-sync)", circleBg: true);
+                bx += Theme.F(46);
+            }
+            var P2 = shell.Player;
+            string sp = P2.Rate.ToString("0.##") + "×";
+            Pill(g, "speed", bx, ty + Theme.F(1), sp, () => (shell as MainForm)?.SpeedMenu(PointToScreen(Point.Round(new PointF(bx, ty + Theme.F(40) - Offset)))), Math.Abs(P2.Rate - 1) > 0.01, null, 36, "Playback speed");
 
             // other versions of this song: switch without losing your place
             var versions = shell.Lib.VersionsOf(t);
@@ -237,6 +269,7 @@ namespace Aura
 
         // ---------- the song's waveform: click to jump, drag to loop a part ----------
         float dragFrom = -1, dragTo = -1;
+        int hoverStar;
         void DrawWave(Graphics g, Track t, RectangleF r)
         {
             var P = shell.Player;
@@ -260,6 +293,9 @@ namespace Aura
             bx -= PillWidth(g, "A");
             Pill(g, "loopa", bx, ly - Theme.F(3), "A", () => P.SetLoop(P.Position, P.LoopB > P.Position ? P.LoopB : Math.Min(dur, P.Position + 8)), P.LoopA >= 0, null, 26, "Loop starts here (" + Theme.Time(P.Position) + ")");
             Icons.Draw(g, "loop", new RectangleF(bx - Theme.F(26), ly, Theme.F(18), Theme.F(18)), P.Looping ? Theme.AccentText : Theme.Faint);
+            bx -= Theme.F(36);
+            bx -= PillWidth(g, "Bookmark", "bookmark");
+            Pill(g, "addbm", bx, ly - Theme.F(3), "Bookmark", () => { shell.Lib.AddBookmark(t, P.Position); shell.Toast("Bookmarked " + Theme.Time(P.Position)); Invalidate(); }, false, "bookmark", 26, "Mark this spot (B)");
             // the wave
             var wr = new RectangleF(r.X, ly + Theme.F(28), r.Width, r.Height - Theme.F(28));
             double pos = P.SmoothPosition;
@@ -272,7 +308,7 @@ namespace Aura
             if (dragFrom >= 0 && dragTo >= 0 && Math.Abs(dragTo - dragFrom) > 0.004f)
             {
                 float a = wr.X + Math.Min(dragFrom, dragTo) * wr.Width, b = wr.X + Math.Max(dragFrom, dragTo) * wr.Width;
-                Theme.Fill(g, Theme.Alpha(Color.White, 40), new RectangleF(a, wr.Y - Theme.F(2), b - a, wr.Height + Theme.F(4)), Theme.F(4));
+                Theme.Fill(g, Theme.Alpha(Theme.Ink, 40), new RectangleF(a, wr.Y - Theme.F(2), b - a, wr.Height + Theme.F(4)), Theme.F(4));
             }
             float bar = Theme.F(3), gap = Theme.F(2);
             int n = Math.Max(10, (int)(wr.Width / (bar + gap)));
@@ -300,6 +336,17 @@ namespace Aura
             g.SmoothingMode = smooth;
             // where you are
             using (var pen = new Pen(Theme.Text, Theme.F(1.5f))) g.DrawLine(pen, wr.X + k * wr.Width, wr.Y - Theme.F(3), wr.X + k * wr.Width, wr.Bottom + Theme.F(3));
+            // bookmarks: little flags above the wave (click to jump, right-click to remove)
+            if (dur > 0)
+                foreach (var bm in shell.Lib.BookmarksOf(t.Id))
+                {
+                    float mx = wr.X + (float)(bm.At / dur) * wr.Width;
+                    var mr = new RectangleF(mx - Theme.F(7), wr.Y - Theme.F(20), Theme.F(14), Theme.F(16));
+                    Icons.Draw(g, "bookmark", mr, Hover("bm:" + bm.Id) ? Theme.Text : Theme.AccentText, true);
+                    var bb = bm;
+                    var bh = AddHit("bm:" + bm.Id, RectangleF.Inflate(mr, 3, 3), () => P.Seek(bb.At), "Bookmark at " + Theme.Time(bm.At) + " — click to jump, right-click to remove");
+                    bh.Right = pt => { shell.Lib.RemoveBookmark(bb.Id); Invalidate(); };
+                }
             var hit = AddHit("wave", wr, null, loopTip);
             hit.Cursor = Cursors.Hand;
             hit.DragTo = p => { float f = Math.Max(0, Math.Min(1, (p.X - wr.X) / wr.Width)); if (dragFrom < 0) dragFrom = f; dragTo = f; Invalidate(); };

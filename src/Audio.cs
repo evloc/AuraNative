@@ -17,6 +17,7 @@ namespace Aura
         double Position { get; set; }
         double Duration { get; }
         int Volume { set; }
+        double Rate { set; }      // playback speed (1 = normal)
         PlayState Poll();
         void Unload();          // let go of the file (so it can be changed or renamed)
     }
@@ -28,6 +29,19 @@ namespace Aura
             if (test || !App.IsWindows) return new TestAudio();
             if (Environment.GetEnvironmentVariable("AURA_ENGINE") == "wmp") return (IAudio)WmpAudio.TryCreate() ?? new MciAudio();
             return (IAudio)MfAudio.TryCreate() ?? (IAudio)WmpAudio.TryCreate() ?? new MciAudio();
+        }
+
+        // a second engine of the same kind, for playing the next song while this one ends (crossfade / no gap)
+        public static IAudio Twin(IAudio like)
+        {
+            try
+            {
+                if (like is TestAudio) return new TestAudio { Picky = false };
+                if (like is MfAudio) return MfAudio.TryCreate();
+                if (like is WmpAudio) return WmpAudio.TryCreate();
+            }
+            catch (Exception e) { App.Log("second player: " + e.Message); }
+            return null;
         }
 
         // the next engine to try when one can't play a song: Media Foundation, then Windows Media, then MCI
@@ -86,6 +100,7 @@ namespace Aura
         }
         public double Duration { get { try { return w.currentMedia == null ? 0 : (double)w.currentMedia.duration; } catch { return 0; } } }
         public int Volume { set { try { w.settings.volume = value; } catch { } } }
+        public double Rate { set { try { w.settings.rate = value; } catch { } } }
 
         public PlayState Poll()
         {
@@ -163,6 +178,7 @@ namespace Aura
         }
         public double Duration => double.TryParse(Send("status aura length"), out var ms) ? ms / 1000 : 0;
         public int Volume { set { Send("setaudio aura volume to " + value * 10); } }
+        public double Rate { set { Send("set aura speed " + (int)(value * 1000)); } }
         public PlayState Poll()
         {
             if (!open) return wantPlay ? PlayState.Ended : PlayState.Stopped;
@@ -194,7 +210,10 @@ namespace Aura
         public void Stop() { wantPlay = false; baseAt = 0; sw.Reset(); }
         public double Position { get => Math.Min(dur, baseAt + sw.Elapsed.TotalSeconds * Speed); set { baseAt = Math.Max(0, Math.Min(dur, value)); if (sw.IsRunning) sw.Restart(); else sw.Reset(); } }
         public double Duration => dur;
-        public int Volume { set { } }
+        public int Volume { set { LastVolume = value; } }
+        public int LastVolume = -1;
+        public static double LastRate = 1;
+        public double Rate { set { LastRate = value; } }
         public PlayState Poll() => broken && wantPlay ? (since.Elapsed.TotalSeconds > 1 ? PlayState.Failed : PlayState.Playing) : !wantPlay ? (baseAt > 0 ? PlayState.Paused : PlayState.Stopped) : Position >= dur ? PlayState.Ended : PlayState.Playing;
         public void Unload() { Stop(); }
         public void Dispose() { }

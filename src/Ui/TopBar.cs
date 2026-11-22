@@ -62,7 +62,7 @@ namespace Aura
             box = new RectangleF(Theme.F(114), y - Theme.F(2), Math.Max(Theme.F(160), w), Theme.F(40));
             bool focus = Search.Focused;
             Theme.Fill(g, Theme.Surface, box, box.Height / 2);
-            Theme.Stroke(g, focus ? Theme.Alpha(Theme.Accent, 200) : Theme.Alpha(Color.White, Hover("box") ? 50 : 24), box, box.Height / 2, focus ? 1.6f : 1);
+            Theme.Stroke(g, focus ? Theme.Alpha(Theme.Accent, 200) : Theme.Alpha(Theme.Ink, Hover("box") ? 50 : 24), box, box.Height / 2, focus ? 1.6f : 1);
             float s = Theme.F(18);
             Icons.Draw(g, "search", new RectangleF(box.X + Theme.F(14), box.Y + (box.Height - s) / 2, s, s), focus ? Theme.Text : Theme.Sub);
             int th = Search.PreferredHeight;

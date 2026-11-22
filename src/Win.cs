@@ -38,7 +38,7 @@ namespace Aura
             if (!App.IsWindows) return;
             try
             {
-                int on = 1;
+                int on = Theme.IsLight ? 0 : 1;
                 if (DwmSetWindowAttribute(h, 20, ref on, 4) != 0) DwmSetWindowAttribute(h, 19, ref on, 4);
                 int dark = ColorToBgr(Theme.Side);
                 DwmSetWindowAttribute(h, 35, ref dark, 4);     // caption color on Windows 11

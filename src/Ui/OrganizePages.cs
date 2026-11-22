@@ -42,7 +42,10 @@ namespace Aura
             float pad = Theme.F(28), y = Theme.F(8);
             Theme.Write(g, "Missing info", Theme.Font(34, FontStyle.Bold), Theme.Text, new RectangleF(pad, y + Theme.F(24), Width - pad * 2, Theme.F(48)));
             Theme.Write(g, "Songs that are missing something. Open a group, select songs, and right-click to fix them.", Theme.Font(13.5f), Theme.Sub, new RectangleF(pad, y + Theme.F(72), Width - pad * 2, Theme.F(22)));
-            y += Theme.F(116);
+            float px = pad;
+            px = Pill(g, "fillall", px, y + Theme.F(104), "Fill in blanks from file & folder names", () => shell.FillFromNames(shell.Lib.Tracks.ToList()), false, "edit", 34).Right + Theme.F(10);
+            Pill(g, "tracker", px, y + Theme.F(104), "Import a fan tracker…", () => (FindForm() as MainForm)?.ImportTracker(), false, "era", 34);
+            y += Theme.F(160);
             int cols = Width > Theme.F(1000) ? 3 : 2;
             float gap = Theme.F(16), cw = (Width - pad * 2 - gap * (cols - 1)) / cols, ch = Theme.F(112);
             int i = 0;
@@ -72,9 +75,39 @@ namespace Aura
     sealed class VersionsPage : Canvas
     {
         readonly IShell shell;
-        List<List<Track>> groups;
+        List<List<Track>> groups, suggested;
+        List<Library.InFull> inFull;
         public VersionsPage(IShell shell) { this.shell = shell; Reload(); }
-        public void Reload() { groups = shell.Lib.VersionGroups(); Invalidate(); }
+        public void Reload()
+        {
+            groups = shell.Lib.VersionGroups(); inFull = shell.Lib.NowInFull();
+            // a snippet that's here in full is shown once, under Now in full
+            suggested = shell.Lib.SuggestedVersions().Where(sg => !inFull.Any(a => sg.Contains(a.Full))).ToList();
+            Invalidate();
+        }
+
+        public static void WriteTitles(MainForm f, List<Track> grp)
+        {
+            var song = LyricsOnline.CleanTitle(grp[0].Name);
+            var titles = Library.VersionTitles(song, grp);
+            var jobs = grp.Where(t => titles[t.Id] != t.Title).Select(t => (t, new TagEdit { Title = titles[t.Id] })).ToList();
+            if (jobs.Count == 0) { f.Toast("The titles are already like that"); return; }
+            var list = string.Join("\n", jobs.Take(12).Select(j => "  " + j.t.Name + "  →  " + j.Item2.Title)) + (jobs.Count > 12 ? "\n  …" : "");
+            if (System.Windows.Forms.MessageBox.Show(f, "Give these versions clear titles?\n\n" + list + "\n\nThis changes the title tag in the files (Ctrl+Z puts it back).", "AURA", System.Windows.Forms.MessageBoxButtons.OKCancel) != System.Windows.Forms.DialogResult.OK) return;
+            f.RunWrites(jobs, "Wrote version titles");
+        }
+
+        void Menu(List<Track> grp, Point at)
+        {
+            var f = FindForm() as MainForm; if (f == null) return;
+            var m = Menus.New();
+            var key = Library.VersionKey(grp[0]);
+            m.Items.Add(Menus.Item("Play all versions", () => shell.Player.PlayList(grp.Select(x => x.Id).ToList())));
+            m.Items.Add(Menus.Item("Write clear titles — " + LyricsOnline.CleanTitle(grp[0].Name) + " (v2), (Snippet)…", () => WriteTitles(f, grp)));
+            m.Items.Add(Menus.Item("Rename the song…", () => f.GroupAsVersions(grp)));
+            m.Items.Add(Menus.Item("These aren't versions of one song — split them up", () => { shell.Lib.MarkNotVersions(key); Reload(); f.Toast("Split up — they won't be grouped again"); }));
+            m.Show(at);
+        }
 
         protected override void Draw(Graphics g, RectangleF view)
         {
@@ -84,6 +117,52 @@ namespace Aura
                 : Theme.Count(groups.Count, "song") + " with more than one version — matched by title and artist, ignoring (v2), [CDQ], (snippet) and the like.",
                 Theme.Font(13.5f), Theme.Sub, new RectangleF(pad, y + Theme.F(72), Width - pad * 2, Theme.F(40)), Theme.Wrap);
             y += Theme.F(124);
+            // ---- snippets that are here in full now
+            if (inFull.Count > 0)
+            {
+                Theme.Write(g, "NOW IN FULL  ·  you had snippets of these", Theme.Font(12, FontStyle.Bold), Theme.Faint, new RectangleF(pad, y, Width - pad * 2, Theme.F(22)));
+                y += Theme.F(30);
+                foreach (var a in inFull.Take(8))
+                {
+                    var r = new RectangleF(pad - Theme.F(10), y, Width - pad * 2 + Theme.F(20), Theme.F(58));
+                    Theme.Fill(g, Theme.Alpha(Theme.Accent, 40), r, Theme.F(10));
+                    Theme.Write(g, a.Full.Name + " — " + a.Full.ArtistName, Theme.Font(14.5f, FontStyle.Regular, true), Theme.Text, new RectangleF(r.X + Theme.F(16), r.Y + Theme.F(8), r.Width - Theme.F(420), Theme.F(22)));
+                    Theme.Write(g, "Snippets: " + string.Join(", ", a.Snippets.Select(x => x.Name).Take(3)) + (a.Snippets.Count > 3 ? "…" : ""), Theme.Font(12.5f), Theme.Sub, new RectangleF(r.X + Theme.F(16), r.Y + Theme.F(31), r.Width - Theme.F(420), Theme.F(20)));
+                    var aa = a;
+                    float bx = r.Right - Theme.F(16);
+                    bx -= PillWidth(g, "Dismiss");
+                    Pill(g, "ifno:" + a.Full.Id, bx, r.Y + Theme.F(12), "Dismiss", () => { shell.Lib.DismissInFull(aa.Full); Reload(); }, false, null, 32);
+                    bx -= Theme.F(8) + PillWidth(g, "Group as versions");
+                    Pill(g, "ifgrp:" + a.Full.Id, bx, r.Y + Theme.F(12), "Group as versions", () => { shell.Lib.GroupVersions(new[] { aa.Full }.Concat(aa.Snippets), LyricsOnline.CleanTitle(aa.Full.Name)); shell.Lib.DismissInFull(aa.Full); Reload(); }, false, null, 32);
+                    bx -= Theme.F(8) + PillWidth(g, "Play", "play");
+                    Pill(g, "ifplay:" + a.Full.Id, bx, r.Y + Theme.F(12), "Play", () => shell.Player.PlayList(new List<long> { aa.Full.Id }), true, "play", 32);
+                    y += Theme.F(66);
+                }
+                y += Theme.F(20);
+            }
+            // ---- maybe versions
+            if (suggested.Count > 0)
+            {
+                Theme.Write(g, "MAYBE VERSIONS  ·  same title, artist written differently", Theme.Font(12, FontStyle.Bold), Theme.Faint, new RectangleF(pad, y, Width - pad * 2, Theme.F(22)));
+                y += Theme.F(30);
+                foreach (var sg in suggested.Take(8))
+                {
+                    var r = new RectangleF(pad - Theme.F(10), y, Width - pad * 2 + Theme.F(20), Theme.F(58));
+                    Theme.Fill(g, Theme.Surface, r, Theme.F(10));
+                    Theme.Write(g, LyricsOnline.CleanTitle(sg[0].Name), Theme.Font(14.5f, FontStyle.Regular, true), Theme.Text, new RectangleF(r.X + Theme.F(16), r.Y + Theme.F(8), r.Width * 0.5f, Theme.F(22)));
+                    Theme.Write(g, string.Join("  ·  ", sg.Select(t => t.Name + " — " + t.ArtistName).Distinct().Take(4)), Theme.Font(12.5f), Theme.Sub, new RectangleF(r.X + Theme.F(16), r.Y + Theme.F(31), r.Width - Theme.F(300), Theme.F(20)));
+                    var gg = sg;
+                    float bx = r.Right - Theme.F(16);
+                    bx -= PillWidth(g, "Not versions");
+                    Pill(g, "sgno:" + sg[0].Id, bx, r.Y + Theme.F(12), "Not versions", () => { shell.Lib.DismissSuggestion(gg); Reload(); }, false, null, 32);
+                    bx -= Theme.F(8) + PillWidth(g, "Group them");
+                    Pill(g, "sgok:" + sg[0].Id, bx, r.Y + Theme.F(12), "Group them", () => { shell.Lib.GroupVersions(gg, LyricsOnline.CleanTitle(gg[0].Name)); Reload(); shell.Toast("Grouped as versions"); }, true, null, 32);
+                    y += Theme.F(66);
+                }
+                y += Theme.F(20);
+                Theme.Write(g, "VERSIONS  ·  right-click one to write clear titles or split it up", Theme.Font(12, FontStyle.Bold), Theme.Faint, new RectangleF(pad, y, Width - pad * 2, Theme.F(22)));
+                y += Theme.F(30);
+            }
             float rowH = Theme.F(76);
             int first = Math.Max(0, (int)((view.Top - y) / rowH) - 1), last = Math.Min(groups.Count - 1, (int)((view.Bottom - y) / rowH) + 1);
             for (int i = first; i <= last; i++)
@@ -118,7 +197,8 @@ namespace Aura
                     cx += w + Theme.F(8);
                 }
                 var key = Library.VersionKey(t);
-                AddHit(id, r, () => shell.Go(new Route("version", key)));
+                var gr = grp;
+                AddHit(id, r, () => shell.Go(new Route("version", key))).Right = p => Menu(gr, p);
             }
             ContentHeight = y + groups.Count * rowH + Theme.F(40);
         }

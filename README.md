@@ -24,7 +24,39 @@ installed side by side, and each keeps its own library:
   drag songs to reorder.
 - **Favorites** — the heart on any song.
 - **Up next** — Play next, Add to up next, drag to reorder, remove, clear.
-- **Search** — songs, artists and albums, including file names.
+- **Search** — songs, artists and albums, including file names — and a line
+  of the lyrics finds its song. Narrow it down with `artist:`, `album:`,
+  `era:`, `prod:`, `year:>=2019`, `bpm:>140`, `key:8A`, `rating:>=4`,
+  `plays:>10`, `"an exact phrase"`, `-leave-this-out`, and `noart`,
+  `nolyrics`, `unrated`, `fav`, `versioned`, `unplayed`.
+- **Ratings and smart playlists** — 1–5 stars (keys 1–5, or the stars in Now
+  Playing); Most played, Recently played, Recently added and Top rated build
+  themselves in the sidebar.
+- **Eras** — group songs by era or session (right-click → More → Set era, or
+  Edit info); each era gets a page with its cover.
+- **History** — every song you played, newest first.
+- **Drag and drop** — drag songs onto a playlist, Favorites or Up next in the
+  sidebar, or out to a folder.
+- **A–Z** — long song lists sorted by name get a letter bar on the right.
+- **Between songs** — a short gap, no gap, or a 3–10 second crossfade.
+- **Even out loudness** — loud songs are turned down to match the rest.
+- **Radio** — when Up next runs out, it keeps going with songs like the last
+  one (same artist, era, tempo, and your favorites).
+- **Sleep timer** — the moon in the player bar: stop in 15–90 minutes or at the
+  end of the song (it fades out).
+- **Speed** — 0.75× to 1.5× (Now Playing).
+- **Bookmarks** — press B (or the Bookmark button) to mark a moment; they show
+  on the waveform — click to jump, right-click to remove.
+- **Discord status** — "Listening to" on your Discord profile (Settings →
+  Discord status; needs a free Discord app's Application ID).
+- **Undo** — Ctrl+Z puts back the last tag change, era or tracker import;
+  Settings → Undo lists the last few.
+- **Fan trackers** — Missing info → Import a fan tracker: a .csv, .xlsx or
+  Google Sheets link. Matches songs by title (and their other names), shows
+  what would change, then fills in titles, eras, years and notes (producer,
+  recorded and leaked dates).
+- **Now in full** — when a song you only had snippets of shows up in full,
+  AURA says so (and Versions lists it).
 - **Player** — shuffle, repeat all / repeat one, seek, volume, and the
   keyboard's media keys even when AURA isn't the window in front.
 - **Colors follow the song** — the accent color comes from the playing cover.
@@ -55,12 +87,16 @@ installed side by side, and each keeps its own library:
   that's playing keeps playing.
 - **Find a cover** — searches Apple Music and Deezer; use it for one song or
   the whole album, or choose a picture file.
-- **Fill in blanks from file names** — "03 - Juice WRLD - Robbery (v2).mp3"
+- **Fill in blanks from file and folder names** — Music/Artist/Album (2020)/05 -
+  Song.mp3 fills in the artist, album, year, number and title. Also: "03 - Juice WRLD - Robbery (v2).mp3"
   gives track 3, artist and title. Only empty boxes are filled.
 - **Rename files** — from a pattern like {artist} - {title}; plays, playlists
   and favorites stay with each song.
 - **Missing info** — songs with no artist, title, cover, album, year or lyrics.
-- **Versions** — songs that come in more than one version (v2, CDQ, snippet…)
+- **Versions** — songs that come in more than one version (v2, CDQ, snippet…);
+  "maybe versions" with the artist written differently to group in one click;
+  right-click one to write clear titles (Song (v2), Song (Snippet)) or to split
+  it up. Select songs → More → Group as versions to group them by hand.
   side by side; switch versions in Now Playing without losing your place.
 - **Listens to your songs** — once, slowly, in the background (lowest
   priority; it can be turned off in Settings). From that it draws each song's
@@ -85,7 +121,15 @@ installed side by side, and each keeps its own library:
   waveform button in Now Playing): **auto-sync** times the lyrics a song has
   to the music, word by word; **transcribe** writes them down by listening.
   It uses Whisper (whisper.cpp) on your PC — nothing is uploaded. The model
-  downloads once (base 148 MB, small 488 MB, or bigger).
+  downloads once (base 148 MB, small 488 MB, or bigger). It can **take the
+  vocals out first** (the same MDX-Net model as the first AURA, run with
+  onnxruntime; 65 MB, downloads once), which hears much better over loud
+  beats. After writing lyrics down it **looks online for the real words** and
+  times those instead. Check the result before saving: click a line to hear
+  it, − / + to move it, double-click to fix the words. Settings can also
+  **time every song by itself** in the background.
+- **Lyrics by hand** — right-click → Edit lyrics, or Time the lyrics by hand
+  (press Space as each line starts).
 - **Windows media controls** — the pop-up that shows with the volume keys
   and the lock screen show the song and cover, with play/pause, next and
   previous.
@@ -94,7 +138,8 @@ installed side by side, and each keeps its own library:
 - **Mini player** — a small window that stays on top (Ctrl+M or the button
   next to the microphone).
 - **Stats** — listening time, plays by day or month, top songs and artists.
-- **Themes** — Midnight, Neon, Sunset, Ocean and Mono.
+- **Themes** — Midnight, Neon, Sunset, Ocean, Light and Mono, or Match
+  Windows (Light when Windows is set to light).
 - **Plays with Windows' own Media Foundation engine** (the one behind Edge and
   the Media Player app), with Windows Media Player's engine and MCI as backups
   — so it doesn't need the old Windows Media Player installed.
@@ -111,14 +156,31 @@ installed side by side, and each keeps its own library:
   folders, playlists, favorites and play counts from the first AURA
   (matched by file path; the first AURA is not changed).
 
-Not here yet: vocal isolation before transcribing (the first AURA's MDX-Net
-model). Whisper listens to the full mix.
+Not here yet: an equalizer.
 
 ## Keys
 
-Space play/pause · Ctrl+L Now Playing · F11 full-screen lyrics · Ctrl+M mini player · Ctrl+→ / Ctrl+← next / previous · Ctrl+↑ / Ctrl+↓ volume ·
-Ctrl+F search · Alt+← / Alt+→ back / forward · Enter plays the selected song ·
-Delete removes from a playlist or up next.
+| Key | Does |
+| --- | --- |
+| Space | play / pause |
+| Ctrl+→ / Ctrl+← | next / previous song |
+| Shift+→ / Shift+← | jump 10 seconds |
+| Ctrl+↑ / Ctrl+↓ | volume |
+| N or Ctrl+L | Now Playing |
+| K or F11 | full-screen lyrics |
+| M or Ctrl+M | mini player |
+| Q | Up next |
+| F | favorite the song that's playing |
+| 1–5, 0 | rate it, clear the rating |
+| B | bookmark this moment |
+| [ ] \\ | loop start, loop end, loop off |
+| / or Ctrl+F | search |
+| Ctrl+Z | undo the last change |
+| Alt+← / Alt+→ | back / forward |
+| Enter | play the selected song |
+| Delete | remove from a playlist or Up next |
+
+The single-letter keys work when you're not typing in a box.
 
 ## Releasing
 
@@ -131,4 +193,6 @@ GitHub builds it on Windows and puts `AURA-Native-Setup.exe` and
 To build it yourself on Windows, install the .NET SDK and run
 `dotnet build AuraNative.csproj -c Release`; the app ends up in `bin\Release`.
 The speech part (`aura_whisper.dll`) is built from `native/` with CMake and
-whisper.cpp v1.7.6 — see the release workflow for the exact commands.
+whisper.cpp v1.7.6 — see the release workflow for the exact commands. The
+vocal part (`onnx\onnxruntime.dll`) is onnxruntime 1.20.1's CPU build, taken
+from its official Python package by the release workflow.

@@ -35,6 +35,16 @@ namespace Aura
         [DataMember] public int Mp3Kbps = 320;
         [DataMember] public int MiniX = -1, MiniY = -1;
         [DataMember] public string WhisperModel = "base";
+        [DataMember] public int Between;                 // 0 normal, -1 no gap, 2..12 crossfade seconds
+        [DataMember] public bool Leveling;
+        [DataMember] public bool Radio;
+        [DataMember] public double Rate = 1;
+        [DataMember] public bool Discord;
+        [DataMember] public string DiscordApp = "";
+        [DataMember] public bool AutoSyncAll;           // time every song that has lyrics but no timings, in the background
+        [DataMember] public string Separate = "transcribe";   // separate the vocals first: "transcribe", "always", "off"
+        [DataMember] public string SongLanguage = "en";
+        [DataMember] public bool LookOnlineAfterTranscribe = true;
 
         // settings saved by an older AURA don't have the newer ones: start those at their defaults
         [OnDeserializing]
@@ -45,6 +55,7 @@ namespace Aura
             SongsSort = "added"; SongsDesc = true; AutoLyrics = true; CheckUpdates = true;
             RenamePattern = "{artist} - {title}"; ThemeName = "Midnight";
             Listen = true; Mp3Kbps = 320; MiniX = -1; MiniY = -1; WhisperModel = "base";
+            Rate = 1; DiscordApp = ""; Separate = "transcribe"; SongLanguage = "en"; LookOnlineAfterTranscribe = true;
         }
 
         public static string Dir;
@@ -75,6 +86,11 @@ namespace Aura
             Volume = Math.Max(0, Math.Min(100, Volume));
             if (Array.IndexOf(Converter.Rates, Mp3Kbps) < 0) Mp3Kbps = 320;
             if (string.IsNullOrEmpty(WhisperModel)) WhisperModel = "base";
+            if (Rate < 0.5 || Rate > 2) Rate = 1;
+            if (Between < -1 || Between > 12) Between = 0;
+            if (string.IsNullOrEmpty(Separate)) Separate = "transcribe";
+            if (string.IsNullOrEmpty(SongLanguage)) SongLanguage = "en";
+            if (DiscordApp == null) DiscordApp = "";
             if (string.IsNullOrEmpty(RenamePattern)) RenamePattern = "{artist} - {title}";
             if (string.IsNullOrEmpty(ThemeName)) ThemeName = "Midnight";
         }

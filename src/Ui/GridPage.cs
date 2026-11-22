@@ -10,14 +10,16 @@ namespace Aura
     {
         readonly IShell shell;
         public readonly Route Route;
-        List<Album> albums; List<Artist> artists;
+        List<Album> albums; List<Artist> artists; List<Library.EraGroup> eras;
         bool isArtists => Route.Kind == "artists";
+        bool isEras => Route.Kind == "eras";
 
         public GridPage(IShell shell, Route r) { this.shell = shell; Route = r; Reload(); }
 
         public void Reload()
         {
-            if (isArtists) artists = shell.Lib.Artists().OrderByDescending(a => a.Tracks.Count > 2).ThenBy(a => a.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
+            if (isEras) eras = shell.Lib.Eras();
+            else if (isArtists) artists = shell.Lib.Artists().OrderByDescending(a => a.Tracks.Count > 2).ThenBy(a => a.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
             else albums = shell.Lib.Albums().OrderBy(a => a.Name == "Singles" ? 1 : 0).ThenBy(a => a.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
             Invalidate();
         }
@@ -25,13 +27,13 @@ namespace Aura
         protected override void Draw(Graphics g, RectangleF view)
         {
             float pad = Theme.F(28), y = Theme.F(8);
-            int n = isArtists ? artists.Count : albums.Count;
-            Theme.Write(g, isArtists ? "Artists" : "Albums", Theme.Font(34, FontStyle.Bold), Theme.Text, new RectangleF(pad, y + Theme.F(24), Width - pad * 2, Theme.F(48)));
-            Theme.Write(g, Theme.Count(n, isArtists ? "artist" : "album"), Theme.Font(13.5f), Theme.Sub, new RectangleF(pad, y + Theme.F(72), Width, Theme.F(22)));
+            int n = isEras ? eras.Count : isArtists ? artists.Count : albums.Count;
+            Theme.Write(g, isEras ? "Eras" : isArtists ? "Artists" : "Albums", Theme.Font(34, FontStyle.Bold), Theme.Text, new RectangleF(pad, y + Theme.F(24), Width - pad * 2, Theme.F(48)));
+            Theme.Write(g, Theme.Count(n, isEras ? "era" : isArtists ? "artist" : "album"), Theme.Font(13.5f), Theme.Sub, new RectangleF(pad, y + Theme.F(72), Width, Theme.F(22)));
             y += Theme.F(118);
             if (n == 0)
             {
-                Theme.Write(g, "Nothing here yet.", Theme.Font(15), Theme.Sub, new RectangleF(pad, y, Width, Theme.F(30)));
+                Theme.Write(g, isEras ? "No eras yet. Select songs, right-click → More → Set era… (like \"Goodbye & Good Riddance\" or \"2018 sessions\")." : "Nothing here yet.", Theme.Font(15), Theme.Sub, new RectangleF(pad, y, Width - pad * 2, Theme.F(50)), Theme.Wrap);
                 ContentHeight = y + Theme.F(80);
                 return;
             }
@@ -47,7 +49,8 @@ namespace Aura
                     int i = row * cols + c;
                     if (i >= n) break;
                     float x = pad + c * (tile + gap), ty = y + row * (th + gap);
-                    if (isArtists) DrawArtist(g, artists[i], x, ty, tile);
+                    if (isEras) { var e = eras[i]; Tile(g, "e:" + e.Name, x, ty, tile, e.Cover, false, e.Name, (e.Year.Length > 0 ? e.Year + " · " : "") + Theme.Count(e.Tracks.Count, "song"), () => shell.Go(new Route("era", e.Name)), () => shell.Player.PlayList(e.Tracks.Select(t => t.Id).ToList()), "era"); }
+                    else if (isArtists) DrawArtist(g, artists[i], x, ty, tile);
                     else DrawAlbum(g, albums[i], x, ty, tile);
                 }
             int rowsN = (n + cols - 1) / cols;

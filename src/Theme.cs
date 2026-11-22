@@ -28,6 +28,7 @@ namespace Aura
         {
             public string Name, Accent;
             public Color Bg, Side, Bar, Surface, Surface2, Hair, Text, Sub, Faint;
+            public bool IsLight;
         }
 
         static Color C(int r, int g, int b) => Color.FromArgb(r, g, b);
@@ -37,13 +38,46 @@ namespace Aura
             new Palette { Name = "Neon", Accent = "#F72BD6", Bg = C(13, 8, 24), Side = C(8, 5, 16), Bar = C(16, 10, 30), Surface = C(27, 18, 46), Surface2 = C(40, 27, 66), Hair = C(46, 33, 72), Text = C(248, 244, 255), Sub = C(178, 164, 204), Faint = C(120, 106, 150) },
             new Palette { Name = "Sunset", Accent = "#FF6B35", Bg = C(21, 12, 13), Side = C(14, 8, 9), Bar = C(25, 14, 15), Surface = C(39, 23, 23), Surface2 = C(56, 33, 31), Hair = C(62, 39, 37), Text = C(255, 246, 242), Sub = C(205, 175, 166), Faint = C(150, 118, 110) },
             new Palette { Name = "Ocean", Accent = "#14B8A6", Bg = C(6, 16, 20), Side = C(4, 11, 14), Bar = C(8, 20, 25), Surface = C(14, 32, 38), Surface2 = C(21, 45, 53), Hair = C(26, 52, 60), Text = C(240, 250, 250), Sub = C(156, 186, 190), Faint = C(100, 130, 136) },
+            new Palette { Name = "Light", Accent = "#1688FF", Bg = C(246, 247, 250), Side = C(236, 238, 243), Bar = C(250, 251, 253), Surface = C(255, 255, 255), Surface2 = C(232, 235, 241), Hair = C(222, 226, 233), Text = C(20, 24, 33), Sub = C(84, 93, 108), Faint = C(128, 137, 150), IsLight = true },
             new Palette { Name = "Mono", Accent = "#D4D4D8", Bg = C(12, 12, 13), Side = C(7, 7, 8), Bar = C(16, 16, 17), Surface = C(26, 26, 28), Surface2 = C(38, 38, 41), Hair = C(44, 44, 47), Text = C(245, 245, 245), Sub = C(170, 170, 175), Faint = C(115, 115, 120) },
         };
         public static string ThemeName = "Midnight";
 
+        // "Match Windows": Light when Windows apps are set to light, Midnight otherwise
+        public static bool WindowsIsLight()
+        {
+            try
+            {
+                using (var k = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"))
+                    return k?.GetValue("AppsUseLightTheme") is int v && v == 1;
+            }
+            catch { return false; }
+        }
+        public static bool IsLight;
+        // lines and hover tints: white on dark themes, black on the light one
+        public static Color Ink => IsLight ? Color.Black : Color.White;
+
+        // drawing something that always looks dark (Now Playing over its cover backdrop), even in the light theme
+        sealed class Restore : IDisposable
+        {
+            readonly Color[] c; readonly bool light;
+            public Restore() { c = new[] { Bg, Side, Bar, Surface, Surface2, Hair, Text, Sub, Faint }; light = IsLight; }
+            public void Dispose() { Bg = c[0]; Side = c[1]; Bar = c[2]; Surface = c[3]; Surface2 = c[4]; Hair = c[5]; Text = c[6]; Sub = c[7]; Faint = c[8]; IsLight = light; }
+        }
+        public static IDisposable Dark()
+        {
+            if (!IsLight) return null;
+            var r = new Restore();
+            var p = Palettes[0];
+            Bg = p.Bg; Side = p.Side; Bar = p.Bar; Surface = p.Surface; Surface2 = p.Surface2; Hair = p.Hair; Text = p.Text; Sub = p.Sub; Faint = p.Faint; IsLight = false;
+            return r;
+        }
+
         public static void Apply(string name)
         {
+            if (name == "Match Windows") name = WindowsIsLight() ? "Light" : "Midnight";
             var p = Palettes.FirstOrDefault(x => x.Name == name) ?? Palettes[0];
+            IsLight = p.IsLight;
             ThemeName = p.Name;
             Bg = p.Bg; Side = p.Side; Bar = p.Bar; Surface = p.Surface; Surface2 = p.Surface2; Hair = p.Hair; Text = p.Text; Sub = p.Sub; Faint = p.Faint;
         }
@@ -258,7 +292,7 @@ namespace Aura
             using (var b = new LinearGradientBrush(new RectangleF(r.X - 1, r.Y - 1, r.Width + 2, r.Height + 2), FromHsl(h, 0.35f, 0.22f), FromHsl(h + 40, 0.35f, 0.13f), 45f))
                 g.FillPath(b, p);
             float s = r.Width * 0.38f;
-            Icons.Draw(g, icon, new RectangleF(r.X + (r.Width - s) / 2, r.Y + (r.Height - s) / 2, s, s), Alpha(Color.White, 110));
+            Icons.Draw(g, icon, new RectangleF(r.X + (r.Width - s) / 2, r.Y + (r.Height - s) / 2, s, s), Alpha(Ink, 110));
         }
 
         public static string Time(double sec)
@@ -465,6 +499,40 @@ namespace Aura
                         break;
                     case "edit":
                         g.DrawLines(pen, new[] { new PointF(4.5f, 19.5f), new PointF(5.2f, 15.5f), new PointF(15.8f, 4.9f), new PointF(19.1f, 8.2f), new PointF(8.5f, 18.8f), new PointF(4.5f, 19.5f) });
+                        break;
+                    case "star":
+                        {
+                            var pts = new List<PointF>();
+                            for (int i = 0; i < 10; i++) { double a = -Math.PI / 2 + i * Math.PI / 5; float rr = i % 2 == 0 ? 9f : 4f; pts.Add(new PointF(12 + rr * (float)Math.Cos(a), 12.6f + rr * (float)Math.Sin(a))); }
+                            using (var p = new GraphicsPath()) { p.AddPolygon(pts.ToArray()); if (filled) g.FillPath(br, p); pen.Width = 1.6f; g.DrawPath(pen, p); }
+                        }
+                        break;
+                    case "moon":
+                        using (var p = new GraphicsPath())
+                        {
+                            p.AddArc(4, 4, 16, 16, 300, 280);
+                            p.AddArc(9.5f, 1.5f, 13, 13, 135, -230);
+                            p.CloseFigure();
+                            if (filled) g.FillPath(br, p); g.DrawPath(pen, p);
+                        }
+                        break;
+                    case "bookmark":
+                        using (var p = Poly(new[] { 6.5f, 3.5f, 17.5f, 3.5f, 17.5f, 20.5f, 12f, 16.5f, 6.5f, 20.5f })) { if (filled) g.FillPath(br, p); g.DrawPath(pen, p); }
+                        break;
+                    case "spark":      // a smart playlist
+                        g.DrawLine(pen, 12, 3.5f, 12, 8.5f); g.DrawLine(pen, 12, 15.5f, 12, 20.5f);
+                        g.DrawLine(pen, 3.5f, 12, 8.5f, 12); g.DrawLine(pen, 15.5f, 12, 20.5f, 12);
+                        g.DrawLine(pen, 6.5f, 6.5f, 9, 9); g.DrawLine(pen, 15, 15, 17.5f, 17.5f);
+                        g.DrawLine(pen, 17.5f, 6.5f, 15, 9); g.DrawLine(pen, 9, 15, 6.5f, 17.5f);
+                        break;
+                    case "radio":
+                        g.DrawEllipse(pen, 10, 10, 4, 4);
+                        g.DrawArc(pen, 6, 6, 12, 12, 200, 140); g.DrawArc(pen, 6, 6, 12, 12, 20, 140);
+                        g.DrawArc(pen, 2.5f, 2.5f, 19, 19, 205, 130); g.DrawArc(pen, 2.5f, 2.5f, 19, 19, 25, 130);
+                        break;
+                    case "era":        // a stack of records
+                        g.DrawEllipse(pen, 3.5f, 6.5f, 13, 13); g.DrawEllipse(pen, 8.5f, 11.5f, 3, 3);
+                        g.DrawArc(pen, 7.5f, 4.5f, 13, 13, 250, 200);
                         break;
                     case "copies":     // two pages, one over the other
                         using (var p = Theme.Round(new RectangleF(8, 3.5f, 12, 13.5f), 2)) g.DrawPath(pen, p);

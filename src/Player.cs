@@ -5,10 +5,10 @@ using System.Linq;
 namespace Aura
 {
     // What's playing and what comes next. Everything here runs on the UI thread.
-    sealed class Player : IDisposable
+    sealed partial class Player : IDisposable
     {
         readonly Library lib;
-        readonly IAudio primary;
+        IAudio primary;
         IAudio audio;                  // the engine playing the current song
         readonly List<IAudio> spares = new List<IAudio>();     // engines to try when the main one can't play a song
         int tried;
@@ -44,7 +44,7 @@ namespace Aura
         public int Volume
         {
             get => volume;
-            set { volume = Math.Max(0, Math.Min(100, value)); audio.Volume = volume; }   // the other engine gets it when it's used
+            set { volume = Math.Max(0, Math.Min(100, value)); ApplyVolume(); }   // the other engine gets it when it's used
         }
 
         public double Position => Current == null ? 0 : audio.Position;
@@ -187,6 +187,7 @@ namespace Aura
                 failsInRow = 0; StopAll(); return;
             }
             if (Current != t) { LoopA = LoopB = -1; LoopChanged?.Invoke(); }
+            CancelTwin();
             Current = t;
             listened = 0; lastPos = 0; counted = false;
             if (play) { audio.Play(); State = PlayState.Playing; }
@@ -214,7 +215,7 @@ namespace Aura
                 }
                 catch (Exception e) { App.Log("couldn't make a playable copy of " + t.Path + ": " + e.Message); playPath = t.Path; }
             }
-            if (primary.Load(playPath)) { audio.Volume = volume; return true; }
+            if (primary.Load(playPath)) { ApplyVolume(t); audio.Rate = Rate; return true; }
             return SwitchToFallback(t, false);
         }
 
@@ -235,7 +236,7 @@ namespace Aura
                 App.Log("trying " + next.Name + " for " + t.Path);
                 if (!next.Load(playPath ?? t.Path)) continue;
                 audio = next;
-                audio.Volume = volume;
+                ApplyVolume(t); audio.Rate = Rate;
                 if (play) audio.Play();
                 return true;
             }
@@ -257,7 +258,8 @@ namespace Aura
                 if (Shuffle) ShuffleList(Order);
                 Pos = 0; QueueChanged?.Invoke(); Start(true); return;
             }
-            // end of the queue: stop at the start of the last song
+            // end of the queue: radio keeps going with songs like these; otherwise stop
+            if (auto && Radio && AddRadioSongs()) { Pos++; Start(true); return; }
             audio.Stop();
             State = PlayState.Stopped;
             StateChanged?.Invoke();
@@ -282,7 +284,7 @@ namespace Aura
                 else if (lib.Tracks.Count > 0) PlayList(lib.Tracks.OrderByDescending(t => t.Added).Select(t => t.Id).ToList());
                 return;
             }
-            if (State == PlayState.Playing) { audio.Pause(); State = PlayState.Paused; }
+            if (State == PlayState.Playing) { CancelTwin(); audio.Pause(); State = PlayState.Paused; }
             else
             {
                 if (State == PlayState.Stopped && audio.Duration > 0 && audio.Position >= audio.Duration - 0.5) audio.Position = 0;
@@ -294,6 +296,7 @@ namespace Aura
         public void Seek(double sec)
         {
             if (Current == null) return;
+            CancelTwin();
             audio.Position = Math.Max(0, Math.Min(sec, Math.Max(0, Duration - 0.25)));
             lastPos = audio.Position;
             anchorFor = -1;
@@ -302,6 +305,8 @@ namespace Aura
 
         void Poll()
         {
+            if (Current == null) return;
+            PollMore();
             if (Current == null) return;
             var s = audio.Poll();
             if (s == PlayState.Failed)
@@ -322,6 +327,8 @@ namespace Aura
             {
                 CountIfListened(true);
                 failsInRow = 0;
+                if (SleepAfterSong) { SleepAfterSong = false; SleepAt = DateTime.MinValue; StopAll(); SleepChanged?.Invoke(); return; }
+                if (TakeOverFromTwin()) return;          // the next song is already playing (no gap / crossfade)
                 Advance(true);
                 return;
             }

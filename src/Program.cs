@@ -25,6 +25,7 @@ namespace Aura
             App.Init(data);
 
             if (args.Contains("--selftest")) return SelfTest();
+            if (args.Contains("--vocals")) return VocalsCli(Arg(args, "--vocals"), Arg(args, "--out"));
 
             // one AURA at a time: a second start just brings the first one forward
             Win.InitMessages();
@@ -110,6 +111,26 @@ namespace Aura
             }
         }
 
+        // AURA Native.exe --vocals song.mp3 --out vocals.wav   (the vocals on their own, 16 kHz mono)
+        static int VocalsCli(string input, string output)
+        {
+            try
+            {
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                var y = Separator.Vocals(Path.GetFullPath(input), 0, Tags.Read(input).Duration, 20 * 60, p => { }, null);
+                using (var f = new BinaryWriter(File.Create(output ?? "vocals.wav")))
+                {
+                    f.Write(System.Text.Encoding.ASCII.GetBytes("RIFF")); f.Write(36 + y.Length * 2); f.Write(System.Text.Encoding.ASCII.GetBytes("WAVEfmt "));
+                    f.Write(16); f.Write((short)1); f.Write((short)1); f.Write(16000); f.Write(32000); f.Write((short)2); f.Write((short)16);
+                    f.Write(System.Text.Encoding.ASCII.GetBytes("data")); f.Write(y.Length * 2);
+                    foreach (var v in y) f.Write((short)Math.Max(-32767, Math.Min(32767, v * 32767)));
+                }
+                Console.WriteLine("vocals: " + (y.Length / 16000.0).ToString("0.0") + " s in " + sw.Elapsed.TotalSeconds.ToString("0.0") + " s (" + Separator.LastStats + ")");
+                return 0;
+            }
+            catch (Exception e) { Console.WriteLine("vocals: FAILED " + e.Message); return 1; }
+        }
+
         // checks the parts AURA needs, for the release build; writes selftest.txt
         static int SelfTest()
         {
@@ -161,6 +182,13 @@ namespace Aura
             if (Whisper.Load()) lines.Add("speech       : ok");
             else if (Whisper.LoadError.Contains("isn't installed")) lines.Add("speech       : not installed");
             else { ok = false; lines.Add("speech       : FAILED " + Whisper.LoadError); }
+            // taking the vocals out: onnxruntime must load when it's installed
+            if (!Separator.Installed) lines.Add("vocals       : not installed");
+            else
+            {
+                var r = Separator.SelfTest();
+                if (r.StartsWith("ok")) lines.Add("vocals       : " + r); else { ok = false; lines.Add("vocals       : FAILED " + r); }
+            }
             lines.Add("RESULT: " + (ok ? "OK" : "FAILED"));
             File.WriteAllLines(Path.Combine(App.DataDir, "selftest.txt"), lines);
             Console.WriteLine(string.Join(Environment.NewLine, lines));

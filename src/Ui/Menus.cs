@@ -75,11 +75,16 @@ namespace Aura
             MaximizeBox = MinimizeBox = false; ShowInTaskbar = false;
             StartPosition = FormStartPosition.CenterParent;
             BackColor = Theme.Surface; ForeColor = Theme.Text; Font = Theme.Font(14);
-            ClientSize = new Size(Theme.P(420), Theme.P(168));
-            var lbl = new Label { Text = prompt, AutoSize = false, Location = new Point(Theme.P(22), Theme.P(18)), Size = new Size(Theme.P(376), Theme.P(24)), ForeColor = Theme.Sub };
-            box = new TextBox { Text = value ?? "", Location = new Point(Theme.P(22), Theme.P(50)), Width = Theme.P(376), BackColor = Theme.Surface2, ForeColor = Theme.Text, BorderStyle = BorderStyle.FixedSingle, Font = Theme.Font(15) };
-            var okB = new Button { Text = ok, DialogResult = DialogResult.OK, FlatStyle = FlatStyle.Flat, BackColor = Theme.Accent, ForeColor = Color.White, Size = new Size(Theme.P(110), Theme.P(36)), Location = new Point(Theme.P(288), Theme.P(110)) };
-            var cancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, FlatStyle = FlatStyle.Flat, BackColor = Theme.Surface2, ForeColor = Theme.Text, Size = new Size(Theme.P(100), Theme.P(36)), Location = new Point(Theme.P(176), Theme.P(110)) };
+            // the question can be a few lines long
+            int textH;
+            using (var g = CreateGraphics()) textH = (int)Math.Ceiling(g.MeasureString(prompt ?? "", Font, Theme.P(376)).Height);
+            textH = Math.Max(Theme.P(24), Math.Min(Theme.P(160), textH + Theme.P(4)));
+            int extra = textH - Theme.P(24);
+            ClientSize = new Size(Theme.P(420), Theme.P(168) + extra);
+            var lbl = new Label { Text = prompt, AutoSize = false, Location = new Point(Theme.P(22), Theme.P(18)), Size = new Size(Theme.P(376), textH), ForeColor = Theme.Sub };
+            box = new TextBox { Text = value ?? "", Location = new Point(Theme.P(22), Theme.P(50) + extra), Width = Theme.P(376), BackColor = Theme.Surface2, ForeColor = Theme.Text, BorderStyle = BorderStyle.FixedSingle, Font = Theme.Font(15) };
+            var okB = new Button { Text = ok, DialogResult = DialogResult.OK, FlatStyle = FlatStyle.Flat, BackColor = Theme.Accent, ForeColor = Color.White, Size = new Size(Theme.P(110), Theme.P(36)), Location = new Point(Theme.P(288), Theme.P(110) + extra) };
+            var cancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, FlatStyle = FlatStyle.Flat, BackColor = Theme.Surface2, ForeColor = Theme.Text, Size = new Size(Theme.P(100), Theme.P(36)), Location = new Point(Theme.P(176), Theme.P(110) + extra) };
             okB.FlatAppearance.BorderSize = 0; cancel.FlatAppearance.BorderSize = 0;
             Controls.AddRange(new Control[] { lbl, box, okB, cancel });
             AcceptButton = okB; CancelButton = cancel;
@@ -87,10 +92,11 @@ namespace Aura
             HandleCreated += (s, e) => Win.DarkTitle(Handle);
         }
 
-        public static string ForText(IWin32Window owner, string title, string prompt, string value, string ok = "OK")
+        // null when cancelled (or left empty, unless allowEmpty)
+        public static string ForText(IWin32Window owner, string title, string prompt, string value, string ok = "OK", bool allowEmpty = false)
         {
             using (var a = new Ask(title, prompt, value, ok))
-                return a.ShowDialog(owner) == DialogResult.OK && a.box.Text.Trim().Length > 0 ? a.box.Text.Trim() : null;
+                return a.ShowDialog(owner) == DialogResult.OK && (allowEmpty || a.box.Text.Trim().Length > 0) ? a.box.Text.Trim() : null;
         }
     }
 }

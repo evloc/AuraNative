@@ -125,11 +125,12 @@ namespace Aura
     // What AURA learns by listening to a song once.
     sealed class SongSound
     {
-        public const int Version = 1;
+        public const int Version = 2;      // 2: also how loud the song is (for leveling)
         public const int Rate = 11025, Hop = 256;          // ~43 measurements a second
         public static double Fps => (double)Rate / Hop;
         public double Length;
         public double Bpm;                // 0 when there's no steady beat
+        public double Loud = double.NaN;  // average loudness of the sung/played parts, dB below full scale (NaN when unknown)
         public string Key = "";           // "A minor"
         public byte[] Peaks = new byte[0];    // loudest point in each step, 0-255
         public byte[] Env = new byte[0];      // loudness in each step, 0-255 (for lining versions up)
@@ -156,6 +157,11 @@ namespace Aura
                 double mx = 0, sum = 0;
                 for (int j = i * Hop, e = j + Hop; j < e; j++) { double v = Math.Abs(x[j]); if (v > mx) mx = v; sum += x[j] * x[j]; }
                 peaks[i] = mx; env[i] = Math.Sqrt(sum / Hop);
+            }
+            // loudness: the average power of the parts that aren't near-silent
+            {
+                var pw = env.Where(v => v > 0.003).Select(v => v * v).OrderBy(v => v).ToList();
+                if (pw.Count > 0) { var loudest = pw.Skip(pw.Count / 5).ToList(); s.Loud = 10 * Math.Log10(Math.Max(1e-10, loudest.Average())); }
             }
             double top = Math.Max(1e-6, peaks.Max());
             s.Peaks = peaks.Select(v => (byte)Math.Min(255, Math.Round(255 * Math.Sqrt(v / top)))).ToArray();
@@ -447,6 +453,9 @@ namespace Aura
         {
             this.lib = lib;
             lib.Db.Script("CREATE TABLE IF NOT EXISTS sound (track_id INTEGER PRIMARY KEY, size INTEGER, mtime REAL, version INTEGER, length REAL, bpm REAL, key TEXT, peaks BLOB, env BLOB, print BLOB, err TEXT, ts REAL)");
+            if (!lib.Db.Rows("PRAGMA table_info(sound)").Any(r => Conv.S(r[1]) == "loud")) lib.Db.Exec("ALTER TABLE sound ADD COLUMN loud REAL");
+            // what was learned by an older version still shows (waveform, tempo) until the song is heard again
+            foreach (var r in lib.Db.Rows("SELECT track_id,size,mtime FROM sound WHERE version<>? AND err=''", SongSound.Version)) older[Conv.L(r[0])] = (Conv.L(r[1]), Conv.D(r[2]));
             ui = SynchronizationContext.Current;
             Reload();
         }
@@ -468,6 +477,7 @@ namespace Aura
         public void LibraryChanged() { Reload(); Kick(); }
 
         public bool Has(long id) { lock (gate) return done.Contains(id); }
+        readonly Dictionary<long, (long size, double mtime)> older = new Dictionary<long, (long, double)>();
 
         public SongSound Get(Track t)
         {
@@ -475,14 +485,15 @@ namespace Aura
             lock (gate)
             {
                 if (cache.TryGetValue(t.Id, out var c)) return c;
-                if (!done.Contains(t.Id)) return null;
+                if (!done.Contains(t.Id) && !(older.TryGetValue(t.Id, out var o) && o.size == t.Size && Math.Abs(o.mtime - t.Mtime) < 2)) return null;
             }
-            var r = lib.Db.Rows("SELECT length,bpm,key,peaks,env,print,err FROM sound WHERE track_id=?", t.Id).FirstOrDefault();
+            var r = lib.Db.Rows("SELECT length,bpm,key,peaks,env,print,err,loud FROM sound WHERE track_id=?", t.Id).FirstOrDefault();
             if (r == null || Conv.S(r[6]).Length > 0) return null;
             var s = new SongSound
             {
                 Length = Conv.D(r[0]), Bpm = Conv.D(r[1]), Key = Conv.S(r[2]),
                 Peaks = r[3] as byte[] ?? new byte[0], Env = r[4] as byte[] ?? new byte[0],
+                Loud = r[7] == null || r[7] is DBNull ? double.NaN : Conv.D(r[7]),
             };
             var pb = r[5] as byte[] ?? new byte[0];
             s.Print = new uint[pb.Length / 4];
@@ -571,8 +582,8 @@ namespace Aura
         {
             byte[] pb = null;
             if (s != null) { pb = new byte[s.Print.Length * 4]; Buffer.BlockCopy(s.Print, 0, pb, 0, pb.Length); }
-            lib.Db.Exec("INSERT OR REPLACE INTO sound (track_id,size,mtime,version,length,bpm,key,peaks,env,print,err,ts) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-                t.Id, t.Size, t.Mtime, SongSound.Version, s?.Length ?? 0, s?.Bpm ?? 0, s?.Key ?? "", s?.Peaks, s?.Env, pb, err ?? "", Library.Now);
+            lib.Db.Exec("INSERT OR REPLACE INTO sound (track_id,size,mtime,version,length,bpm,key,peaks,env,print,err,ts,loud) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                t.Id, t.Size, t.Mtime, SongSound.Version, s?.Length ?? 0, s?.Bpm ?? 0, s?.Key ?? "", s?.Peaks, s?.Env, pb, err ?? "", Library.Now, s == null || double.IsNaN(s.Loud) ? (object)null : s.Loud);
             lock (gate) { done.Add(t.Id); if (s != null) { cache[t.Id] = s; } else cache.Remove(t.Id); }
         }
 

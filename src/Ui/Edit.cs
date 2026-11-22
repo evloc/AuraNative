@@ -94,6 +94,8 @@ namespace Aura
         readonly PictureBox cover;
         byte[] newCover; bool removeCover;
         public List<(Track, TagEdit)> Result;
+        public string EraResult;          // null: not changed
+        readonly TextBox era; readonly string eraStart;
         readonly Func<IList<Track>, byte[]> findCover;
 
         static readonly (string key, string label)[] Fields = { ("title", "Title"), ("artist", "Artist"), ("album", "Album"), ("albumartist", "Album artist"), ("year", "Year"), ("genre", "Genre"), ("track", "Track #") };
@@ -108,7 +110,7 @@ namespace Aura
         }
 
         public EditInfoForm(List<Track> tracks, Func<IList<Track>, byte[]> findCover)
-            : base(tracks.Count == 1 ? "Edit info — " + tracks[0].Name : "Edit info — " + tracks.Count + " songs", 720, 520)
+            : base(tracks.Count == 1 ? "Edit info — " + tracks[0].Name : "Edit info — " + tracks.Count + " songs", 720, 566)
         {
             this.tracks = tracks; this.findCover = findCover;
             int pad = Theme.P(22), art = Theme.P(190), lx = pad * 2 + art, lw = Theme.P(110), bw = ClientSize.Width - lx - lw - pad;
@@ -142,6 +144,15 @@ namespace Aura
                 boxes[key] = b; start[key] = common;
                 y += Theme.P(46);
             }
+            {
+                var vals = tracks.Select(t => t.Era ?? "").Distinct().ToList();
+                eraStart = vals.Count == 1 ? vals[0] : "";
+                var l = Lbl("Era"); l.SetBounds(lx, y, lw, Theme.P(34)); Controls.Add(l);
+                era = Box(eraStart); era.SetBounds(lx + lw, y + Theme.P(2), bw, Theme.P(32)); Controls.Add(era);
+                if (vals.Count > 1) era.HandleCreated += (s, e) => Win.Cue(era.Handle, "Different for each — leave as is");
+                else era.HandleCreated += (s, e) => Win.Cue(era.Handle, "Like \"2018 sessions\" — kept in AURA, not in the file");
+                y += Theme.P(46);
+            }
             var cant = tracks.Where(t => !TagWriter.CanWrite(t.Path)).ToList();
             var note = Lbl(cant.Count > 0 ? cant.Count + " of these can't be changed yet (" + string.Join(", ", cant.Select(t => Path.GetExtension(t.Path)).Distinct()) + " files)."
                                          : tracks.Count > 1 ? "Only the boxes you change are saved; the rest stay as they are for each song." : "Changes are saved into the music file.", Theme.Faint, 12.5f);
@@ -165,6 +176,7 @@ namespace Aura
         void Build()
         {
             Result = new List<(Track, TagEdit)>();
+            EraResult = era.Text.Trim() == eraStart.Trim() ? null : era.Text.Trim();
             foreach (var t in tracks)
             {
                 if (!TagWriter.CanWrite(t.Path)) continue;

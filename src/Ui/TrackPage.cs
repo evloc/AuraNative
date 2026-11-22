@@ -15,6 +15,8 @@ namespace Aura
         public readonly Route Route;
         string kind => Route.Kind;
         List<Track> rows = new List<Track>();
+        List<double> playedAt;            // History: when each was played
+        SearchQuery query;
         readonly HashSet<int> sel = new HashSet<int>();
         int anchor = -1, focus = -1;
         float listTop, rowH, colH;
@@ -62,14 +64,33 @@ namespace Aura
                     src = playlist == null ? new List<Track>() : playlist.Items.Select(lib.Get).Where(t => t != null);
                     break;
                 case "favorites": src = lib.Tracks.Where(t => t.Fav); break;
+                case "era": src = lib.Tracks.Where(t => string.Equals(t.Era, Route.Key, StringComparison.CurrentCultureIgnoreCase)).OrderBy(t => t.Album, StringComparer.CurrentCultureIgnoreCase).ThenBy(t => t.TrackNo).ThenBy(t => t.Name, StringComparer.CurrentCultureIgnoreCase); break;
+                case "history":
+                    {
+                        var h = lib.History(500);
+                        playedAt = h.Select(x => x.ts).ToList();
+                        src = h.Select(x => x.t);
+                        break;
+                    }
+                case "smart":
+                    switch (Route.Key)
+                    {
+                        case "most": src = lib.Tracks.Where(t => t.Plays > 0).OrderByDescending(t => t.Plays).ThenByDescending(t => t.LastPlayed).Take(100); break;
+                        case "recent": src = lib.RecentlyPlayed(100); break;
+                        case "added": src = lib.Tracks.OrderByDescending(t => t.Added).Take(100); break;
+                        default: src = lib.Tracks.Where(t => t.Rating >= 4).OrderByDescending(t => t.Rating).ThenByDescending(t => t.Plays); break;
+                    }
+                    break;
                 case "missing": src = MissingPage.Which(shell, Route.Key); break;
                 case "version": src = lib.Tracks.Where(t => Library.VersionKey(t) == Route.Key).OrderByDescending(t => t.Plays).ThenBy(t => t.Name, StringComparer.CurrentCultureIgnoreCase); break;
                 case "queue": src = shell.Player.UpNext().Select(lib.Get).Where(t => t != null); break;
                 case "search":
                     {
-                        var words = Route.Key.ToLowerInvariant().Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
-                        bool Match(string hay) { hay = hay.ToLowerInvariant(); return words.All(w => hay.Contains(w)); }
-                        src = lib.Tracks.Where(t => Match(t.Name + " " + t.Artist + " " + t.Album + " " + t.AlbumArtist + " " + t.Genre + " " + t.Year + " " + System.IO.Path.GetFileNameWithoutExtension(t.Path)));
+                        query = new SearchQuery(Route.Key, lib, shell.Sound);
+                        var q = query;
+                        var words = q.PlainText.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                        bool Match(string hay) { hay = hay.ToLowerInvariant(); return words.Length > 0 && words.All(w => hay.Contains(w)); }
+                        src = lib.Tracks.Where(q.Matches).ToList();
                         foundArtists = lib.Artists().Where(a => Match(a.Name)).OrderByDescending(a => a.Tracks.Sum(t => t.Plays)).Take(8).ToList();
                         foundAlbums = lib.Albums().Where(a => a.Name != "Singles" && Match(a.Name + " " + a.Artist)).Take(8).ToList();
                         break;
@@ -128,7 +149,7 @@ namespace Aura
             c.Time = Theme.F(64); c.Fav = Theme.F(40);
             float rest = c.Right - c.X - c.Num - c.Art - c.Time - c.Fav;
             bool showAlbum = kind != "album" && rest > Theme.F(460);
-            bool showAdded = (kind == "songs" || kind == "favorites" || kind == "playlist") && rest > Theme.F(720);
+            bool showAdded = (kind == "songs" || kind == "favorites" || kind == "playlist" || kind == "history" || kind == "smart") && rest > Theme.F(720);
             c.Added = showAdded ? Theme.F(130) : 0;
             c.Album = showAlbum ? (rest - c.Added) * 0.36f : 0;
             c.Title = rest - c.Album - c.Added;
@@ -172,6 +193,50 @@ namespace Aura
                 g.Restore(st);
                 using (var pen = new Pen(Theme.Hair)) g.DrawLine(pen, Theme.F(28), colH, Width - Theme.F(28), colH);
             }
+            DrawLetters(g);
+        }
+
+        // A–Z down the right side of long lists sorted by name: click a letter to jump there
+        static string Letter(string s)
+        {
+            s = (s ?? "").Trim();
+            if (s.StartsWith("the ", StringComparison.OrdinalIgnoreCase) && s.Length > 4) s = s.Substring(4);
+            if (s.Length == 0) return "#";
+            var c = char.ToUpperInvariant(LyricsOnline.Norm(s.Substring(0, Math.Min(4, s.Length))).FirstOrDefault());
+            return c >= 'A' && c <= 'Z' ? c.ToString() : "#";
+        }
+
+        string KeyOf(Track t) => sortKey == "artist" ? t.ArtistName : sortKey == "album" ? t.Album : t.Name;
+
+        void DrawLetters(Graphics g)
+        {
+            if (!Sortable || rows.Count < 40 || !(sortKey == "title" || sortKey == "artist" || sortKey == "album")) return;
+            var have = new HashSet<string>(rows.Select(r => Letter(KeyOf(r))));
+            var letters = new[] { "#" }.Concat(Enumerable.Range(0, 26).Select(i => ((char)('A' + i)).ToString())).ToList();
+            float top = Math.Max(colH + Theme.F(8), listTop + colH - Offset + Theme.F(8)), bottom = Height - Theme.F(14);
+            float step = Math.Min(Theme.F(22), (bottom - top) / letters.Count);
+            if (step < Theme.F(11)) return;
+            float x = Width - Theme.F(34);
+            var f = Theme.Font(step > Theme.F(16) ? 11 : 9.5f, FontStyle.Regular, true);
+            Theme.Fill(g, Theme.Alpha(Theme.Bg, 225), new RectangleF(x - Theme.F(3), top - Theme.F(4), Theme.F(26), step * letters.Count + Theme.F(8)), Theme.F(8));
+            for (int i = 0; i < letters.Count; i++)
+            {
+                var L = letters[i];
+                var r = new RectangleF(x, top + i * step, Theme.F(20), step);
+                bool on = have.Contains(L), hot = Hover("az:" + L);
+                if (hot && on) Theme.Fill(g, Theme.Accent, RectangleF.Inflate(r, Theme.F(1), 0), Theme.F(5));
+                Theme.Write(g, L, f, hot && on ? Theme.OnAccent : on ? Theme.Sub : Theme.Alpha(Theme.Faint, 90), r, Theme.Center);
+                if (on) AddHit("az:" + L, r, () => JumpTo(L), null, true);
+            }
+        }
+
+        void JumpTo(string letter)
+        {
+            int i = rows.FindIndex(t => Letter(KeyOf(t)) == letter);
+            if (i < 0) return;
+            ScrollTo(listTop + colH + i * rowH - colH - Theme.F(6));
+            sel.Clear(); sel.Add(i); anchor = focus = i;
+            Invalidate();
         }
 
         void DrawColumns(Graphics g, float y, bool fixedPos)
@@ -211,7 +276,7 @@ namespace Aura
                 x = start + c.Art + c.Title;
             }
             Head("album", "ALBUM", c.Album, "album");
-            Head("added", "ADDED", c.Added, "added");
+            Head("added", kind == "history" || (kind == "smart" && Route.Key == "recent") ? "PLAYED" : kind == "smart" && Route.Key == "most" ? "PLAYS" : kind == "smart" && Route.Key == "rated" ? "RATING" : "ADDED", c.Added, "added");
             x += c.Fav;
             if (Sortable) Head("time", "TIME", c.Time, "time", Theme.Right);
             else { var r = new RectangleF(x, y, c.Time - Theme.F(8), colH); Theme.Write(g, "TIME", f, col, r, Theme.Right); }
@@ -233,6 +298,7 @@ namespace Aura
             h.Double = () => PlayFrom(ii);
             h.Right = pt => RowMenu(ii, pt);
             if (CanReorder) { h.DragTo = p => RowDrag(ii, p); h.DragEnd = RowDrop; }
+            else { h.DragTo = p => DragOut(ii, p); h.DragEnd = () => { dragFrom = -1; }; }
 
             float x = c.X;
             // number / now playing / play on hover
@@ -277,7 +343,14 @@ namespace Aura
             }
             x += c.Title;
             if (c.Album > 0) { Theme.Write(g, t.Album, Theme.Font(13), Theme.Sub, new RectangleF(x, y, c.Album - Theme.F(14), rowH)); x += c.Album; }
-            if (c.Added > 0) { Theme.Write(g, Theme.Ago(t.Added), Theme.Font(13), Theme.Sub, new RectangleF(x, y, c.Added - Theme.F(10), rowH)); x += c.Added; }
+            if (c.Added > 0)
+            {
+                string when = kind == "history" && playedAt != null && i < playedAt.Count ? Theme.Ago(playedAt[i])
+                    : kind == "smart" && Route.Key == "most" ? Theme.Count(t.Plays, "play")
+                    : kind == "smart" && Route.Key == "rated" ? new string('★', t.Rating)
+                    : kind == "smart" && Route.Key == "recent" ? Theme.Ago(t.LastPlayed) : Theme.Ago(t.Added);
+                Theme.Write(g, when, Theme.Font(13), kind == "smart" && Route.Key == "rated" ? Theme.AccentText : Theme.Sub, new RectangleF(x, y, c.Added - Theme.F(10), rowH)); x += c.Added;
+            }
             // heart: always shown when liked, otherwise on hover
             if (t.Fav || hot)
             {
@@ -293,13 +366,20 @@ namespace Aura
         {
             float pad = Theme.F(28), y = Theme.F(8);
             Track coverTrack = album?.Cover ?? artist?.Cover;
-            bool big = kind == "album" || kind == "artist" || kind == "playlist" || kind == "favorites";
+            bool big = kind == "album" || kind == "artist" || kind == "playlist" || kind == "favorites" || kind == "era";
             string eyebrow = "", title = "", meta = "";
             double total = rows.Sum(t => t.Duration);
             switch (kind)
             {
                 case "songs": title = "Songs"; meta = Theme.Count(rows.Count, "song") + (total > 0 ? ", " + Theme.Long(total) : ""); break;
-                case "search": title = "“" + Route.Key + "”"; eyebrow = "SEARCH"; meta = Theme.Count(rows.Count, "song"); break;
+                case "search":
+                    title = "“" + Route.Key + "”"; eyebrow = "SEARCH";
+                    int byLyrics = query == null ? 0 : rows.Count(query.ByLyrics);
+                    meta = Theme.Count(rows.Count, "song") + (byLyrics > 0 ? "  ·  " + byLyrics + " found by their lyrics" : "") + "  ·  try artist:, era:, bpm:>140, rating:>=4, noart, -word";
+                    break;
+                case "era": eyebrow = "ERA"; title = Route.Key; meta = Theme.Count(rows.Count, "song") + (total > 0 ? ", " + Theme.Long(total) : ""); break;
+                case "history": title = "History"; meta = rows.Count == 0 ? "" : "The songs you played, newest first"; break;
+                case "smart": eyebrow = "SMART PLAYLIST"; title = Sidebar.Smart.FirstOrDefault(x => x.key == Route.Key).name ?? "Playlist"; meta = Theme.Count(rows.Count, "song") + (Route.Key == "rated" ? "  ·  songs you rated 4 or 5 stars" : "  ·  updates by itself"); break;
                 case "favorites": eyebrow = "PLAYLIST"; title = "Favorites"; meta = Theme.Count(rows.Count, "song") + (total > 0 ? ", " + Theme.Long(total) : ""); break;
                 case "queue": title = "Up next"; meta = rows.Count == 0 ? "" : Theme.Count(rows.Count, "song") + ", " + Theme.Long(total); break;
                 case "album":
@@ -386,6 +466,18 @@ namespace Aura
                     }, icon: "trash").Right + Theme.F(10);
                 }
                 if (kind == "queue" && rows.Count > 0) bx = Pill(g, "clr", bx, py, "Clear up next", () => shell.Player.ClearUpNext(), icon: "close").Right + Theme.F(10);
+                if (kind == "queue") bx = Pill(g, "radio", bx, py, shell.Prefs.Radio ? "Radio on" : "Radio off", () => { shell.Prefs.Radio = !shell.Prefs.Radio; shell.Player.Radio = shell.Prefs.Radio; shell.Prefs.Save(); shell.Toast(shell.Prefs.Radio ? "Radio on — when Up next runs out, AURA keeps going with songs like the last one" : "Radio off"); Invalidate(); }, shell.Prefs.Radio, "radio", 36, "Keep playing similar songs when Up next runs out").Right + Theme.F(10);
+                if (kind == "history" && rows.Count > 0) bx = Pill(g, "clrh", bx, py, "Clear history", () => { if (MessageBox.Show(FindForm(), "Clear your listening history? Play counts stay.", "History", MessageBoxButtons.OKCancel) == DialogResult.OK) shell.Lib.ClearHistory(); }, icon: "close").Right + Theme.F(10);
+                if ((kind == "era" || kind == "smart") && rows.Count > 0)
+                {
+                    var ids2 = Ids; var name = title;
+                    bx = Pill(g, "savepl", bx, py, "Save as playlist", () => { var p = shell.Lib.CreatePlaylist(name, ids2); shell.Toast("Saved as the playlist " + p.Name); }, icon: "plus").Right + Theme.F(10);
+                }
+                if (kind == "era")
+                {
+                    var from = Route.Key;
+                    bx = Pill(g, "renera", bx, py, "Rename", () => { var n = Ask.ForText(FindForm(), "Rename era", "New name", from, "Rename"); if (!string.IsNullOrWhiteSpace(n)) { shell.Lib.RenameEra(from, n.Trim()); shell.Go(new Route("era", n.Trim())); } }, icon: "edit").Right + Theme.F(10);
+                }
                 if (kind == "songs") bx = Pill(g, "most", bx, py, sortKey == "plays" ? "Most played  ✓" : "Most played", () => { sortKey = sortKey == "plays" ? "added" : "plays"; sortDesc = true; shell.Prefs.SongsSort = sortKey; Reload(); }).Right + Theme.F(10);
                 if (kind == "missing" && rows.Count > 0)
                 {
@@ -395,7 +487,7 @@ namespace Aura
                     else
                     {
                         bx = Pill(g, "ea", bx, py, "Edit all " + rows.Count, () => shell.EditInfo(all), icon: "edit").Right + Theme.F(10);
-                        if (Route.Key == "notitle" || Route.Key == "noartist") bx = Pill(g, "ff", bx, py, "Fill in from file names", () => shell.FillFromNames(all)).Right + Theme.F(10);
+                        if (Route.Key == "notitle" || Route.Key == "noartist" || Route.Key == "noalbum" || Route.Key == "noyear") bx = Pill(g, "ff", bx, py, "Fill in from file & folder names", () => shell.FillFromNames(all)).Right + Theme.F(10);
                     }
                 }
                 if (kind == "album" && rows.Count > 0)
@@ -578,15 +670,35 @@ namespace Aura
             {
                 if (!sel.Contains(i)) sel.Clear();
                 sel.Add(i); anchor = i;
-                if (CanReorder) { dragFrom = i; dragStart = ToContent(e.Location); }
+                dragFrom = i; dragStart = ToContent(e.Location);
             }
             focus = i;
+            Invalidate();
+        }
+
+        // dragging songs out: onto a playlist, Favorites or Up next in the sidebar (or into a folder, as files)
+        void DragOut(int i, PointF p)
+        {
+            if (dragFrom < 0) return;
+            if (Math.Abs(p.Y - dragStart.Y) < Theme.F(8) && Math.Abs(p.X - dragStart.X) < Theme.F(8)) return;
+            dragFrom = -1;
+            var picked = (sel.Contains(i) ? sel.OrderBy(x => x).ToList() : new List<int> { i }).Where(k => k < rows.Count).Select(k => rows[k]).ToList();
+            if (picked.Count == 0) return;
+            var data = new DataObject();
+            data.SetData("AuraTracks", string.Join(",", picked.Select(t => t.Id)));
+            var files = new System.Collections.Specialized.StringCollection();
+            foreach (var t in picked) if (FileX.Exists(t.Path)) files.Add(t.Path);
+            if (files.Count > 0) data.SetFileDropList(files);
+            EndPress();
+            try { DoDragDrop(data, DragDropEffects.Copy | DragDropEffects.Link); } catch (Exception e) { App.Log("drag: " + e.Message); }
             Invalidate();
         }
 
         void RowDrag(int i, PointF p)
         {
             if (dragFrom < 0) return;
+            // pulled out to the left, over the sidebar: add them somewhere instead of moving them
+            if (p.X < 0) { dragging = false; dropAt = -1; DragOut(i, p); return; }
             if (!dragging && Math.Abs(p.Y - dragStart.Y) < Theme.F(6)) return;
             dragging = true;
             float top = listTop + colH;

@@ -51,6 +51,24 @@ jobs:
           Copy-Item build\basic\Release\aura_whisper.dll "bin\Release\aura_whisper_basic.dll"
           Get-ChildItem bin\Release
 
+      - name: Add the vocal part (onnxruntime)
+        shell: pwsh
+        run: |
+          # onnxruntime's CPU build, taken from its official Python package (the same DLL Microsoft ships)
+          python -m pip download onnxruntime==1.20.1 --no-deps --platform win_amd64 --only-binary=:all: --python-version 3.12 -d ort
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          $whl = Get-ChildItem ort\*.whl | Select-Object -First 1
+          Copy-Item $whl.FullName ort\w.zip; Expand-Archive ort\w.zip -DestinationPath ort\x -Force
+          New-Item -ItemType Directory -Force "bin\Release\onnx" | Out-Null
+          Copy-Item ort\x\onnxruntime\capi\onnxruntime.dll "bin\Release\onnx\"
+          # the Visual C++ files it needs, next to it, so it works on PCs without them
+          foreach ($f in "vcruntime140.dll","vcruntime140_1.dll","msvcp140.dll","msvcp140_1.dll") { Copy-Item "C:\Windows\System32\$f" "bin\Release\onnx\" }
+          Get-ChildItem bin\Release\onnx
+          # the vocal model, so the self-test can run it once
+          $ProgressPreference = 'SilentlyContinue'
+          New-Item -ItemType Directory -Force "$env:APPDATA\AURA Native\models" | Out-Null
+          Invoke-WebRequest -Uri "https://github.com/TRvlvr/model_repo/releases/download/all_public_uvr_models/UVR-MDX-NET-Voc_FT.onnx" -OutFile "$env:APPDATA\AURA Native\models\UVR-MDX-NET-Voc_FT.onnx"
+
       - name: Self-test
         shell: pwsh
         run: |
@@ -64,7 +82,7 @@ jobs:
           if (-not (Test-Path "C:\Program Files (x86)\Inno Setup 6\ISCC.exe")) { choco install innosetup -y --no-progress }
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DAppVersion=$env:AURA_VERSION" installer.iss
           if ($LASTEXITCODE -ne 0) { exit 1 }
-          Compress-Archive -Path "bin\Release\AURA Native.exe","bin\Release\AURA Native.exe.config","bin\Release\aura_whisper.dll","bin\Release\aura_whisper_basic.dll" -DestinationPath "dist\AURA-Native-portable.zip"
+          Compress-Archive -Path "bin\Release\AURA Native.exe","bin\Release\AURA Native.exe.config","bin\Release\aura_whisper.dll","bin\Release\aura_whisper_basic.dll","bin\Release\onnx" -DestinationPath "dist\AURA-Native-portable.zip"
 
       - name: Keep the files from a test run
         if: github.ref_type != 'tag'

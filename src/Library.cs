@@ -14,6 +14,8 @@ namespace Aura
         public double Duration, Added, Mtime, LastPlayed;
         public long Size;
         public bool HasArt, Fav, HasLyrics;
+        public int Rating;             // 0-5 stars
+        public string Era = "";
         public int Plays;
 
         public string Name => Title.Length > 0 ? Title : System.IO.Path.GetFileNameWithoutExtension(Path);
@@ -66,7 +68,7 @@ namespace Aura
         public string Current = "";
     }
 
-    sealed class Library
+    sealed partial class Library
     {
         public readonly Db Db;
         public List<Track> Tracks = new List<Track>();
@@ -104,6 +106,7 @@ CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT)";
                 Db.Exec("UPDATE tracks SET mtime=0");
             }
             ui = SynchronizationContext.Current;
+            PrepareMore();
         }
 
         public void SetUiContext(SynchronizationContext c) => ui = c;
@@ -134,6 +137,7 @@ CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT)";
             }
             foreach (var r in Db.Rows("SELECT track_id FROM favorites"))
                 if (by.TryGetValue(Conv.L(r[0]), out var t)) t.Fav = true;
+            LoadMore(by);
             foreach (var r in Db.Rows("SELECT track_id,count,last_played FROM plays"))
                 if (by.TryGetValue(Conv.L(r[0]), out var t)) { t.Plays = (int)Conv.L(r[1]); t.LastPlayed = Conv.D(r[2]); }
             var pls = new List<Playlist>();
@@ -380,13 +384,14 @@ CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT)";
         // versions of the same song: same cleaned-up title and main artist
         public static string VersionKey(Track t)
         {
+            if (ManualGroups.TryGetValue(t.Id, out var k)) return k;
             var title = LyricsOnline.Norm(LyricsOnline.CleanTitle(t.Title.Length > 0 ? t.Title : Path.GetFileNameWithoutExtension(t.Path)));
             return title.Length == 0 ? "" : title + "|" + LyricsOnline.Norm(t.MainArtist);
         }
 
         public List<List<Track>> VersionGroups()
         {
-            return Tracks.GroupBy(VersionKey).Where(g => g.Key.Length > 0 && g.Count() > 1)
+            return Tracks.GroupBy(VersionKey).Where(g => g.Key.Length > 0 && g.Count() > 1 && !NotVersionKeys.Contains(g.Key))
                 .Select(g => g.OrderByDescending(t => t.Plays).ThenBy(t => t.Name, StringComparer.CurrentCultureIgnoreCase).ToList())
                 .OrderBy(g => g[0].Name, StringComparer.CurrentCultureIgnoreCase).ToList();
         }
@@ -394,7 +399,7 @@ CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT)";
         public List<Track> VersionsOf(Track t)
         {
             var k = VersionKey(t);
-            return k.Length == 0 ? new List<Track> { t } : Tracks.Where(x => VersionKey(x) == k).OrderByDescending(x => x.Plays).ThenBy(x => x.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
+            return k.Length == 0 || NotVersionKeys.Contains(k) ? new List<Track> { t } : Tracks.Where(x => VersionKey(x) == k).OrderByDescending(x => x.Plays).ThenBy(x => x.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
         }
 
         // ---------- favorites, plays ----------

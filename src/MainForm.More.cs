@@ -19,6 +19,8 @@ namespace Aura
 
         void InitMore()
         {
+            InitListen();
+            if (Prefs.AutoSyncAll) StartAutoSync();
             Sound = new SoundStore(Lib) { Background = Prefs.Listen };
             Sound.Ready += id =>
             {

@@ -222,7 +222,7 @@ namespace Aura
                 bool hot = host != null && Timed && host.HoverIdIs(idPrefix + ":" + i);
                 if (hot && i != cur) a = Math.Min(1, a + 0.3f);
                 var lineRect = new RectangleF(area.X - Theme.F(10), top - Theme.F(4), area.Width + Theme.F(20), L.Height + Theme.F(8));
-                if (hot) Theme.Fill(g, Theme.Alpha(Color.White, 14), lineRect, Theme.F(10));
+                if (hot) Theme.Fill(g, Theme.Alpha(Theme.Ink, 14), lineRect, Theme.F(10));
                 if (a > 0.01f)
                 {
                     var sp = SpriteOf(L);

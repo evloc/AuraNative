@@ -22,7 +22,7 @@ namespace Aura
             float pad = Theme.F(28);
             var r = new RectangleF(pad, y, Math.Min(Width - pad * 2, Theme.F(820)), h);
             Theme.Fill(g, Theme.Surface, r, Theme.F(14));
-            Theme.Stroke(g, Theme.Alpha(Color.White, 14), r, Theme.F(14));
+            Theme.Stroke(g, Theme.Alpha(Theme.Ink, 14), r, Theme.F(14));
             Theme.Write(g, title, Theme.Font(17, FontStyle.Bold), Theme.Text, new RectangleF(r.X + Theme.F(22), r.Y + Theme.F(18), r.Width - Theme.F(44), Theme.F(26)));
             if (sub != null) Theme.Write(g, sub, Theme.Font(13), Theme.Sub, new RectangleF(r.X + Theme.F(22), r.Y + Theme.F(46), r.Width - Theme.F(44), Theme.F(subH)), Theme.Wrap);
             return r.X + Theme.F(22);
@@ -69,27 +69,30 @@ namespace Aura
             y += h + Theme.F(20);
 
             // ---- look
-            h = Theme.F(330);
+            h = Theme.F(366);
             x = Card(g, y, h, "Look", null);
             float ly = y + Theme.F(58);
             // themes as little previews
-            float tx = x, tsz = Math.Min(Theme.F(132), (cw - Theme.F(44) - Theme.F(12) * 4) / 5);
+            float tx = x, tsz = Math.Min(Theme.F(132), (cw - Theme.F(44) - Theme.F(12) * (Theme.Palettes.Length - 1)) / Theme.Palettes.Length);
             foreach (var p in Theme.Palettes)
             {
                 var r = new RectangleF(tx, ly, tsz, Theme.F(76));
-                bool on = Theme.ThemeName == p.Name, hot = Hover("th:" + p.Name);
+                bool on = Theme.ThemeName == p.Name && shell.Prefs.ThemeName != "Match Windows", hot = Hover("th:" + p.Name);
                 Theme.Fill(g, p.Bg, r, Theme.F(10));
                 Theme.Fill(g, p.Side, new RectangleF(r.X, r.Y, r.Width * 0.28f, r.Height), Theme.F(10));
                 Theme.Fill(g, p.Surface2, new RectangleF(r.X + r.Width * 0.36f, r.Y + Theme.F(14), r.Width * 0.5f, Theme.F(8)), Theme.F(4));
                 Theme.Fill(g, p.Surface, new RectangleF(r.X + r.Width * 0.36f, r.Y + Theme.F(28), r.Width * 0.36f, Theme.F(8)), Theme.F(4));
                 using (var b = new SolidBrush(Theme.Parse(p.Accent, Theme.AccentBase))) g.FillEllipse(b, r.X + r.Width * 0.36f, r.Y + Theme.F(46), Theme.F(18), Theme.F(18));
-                Theme.Stroke(g, on ? Theme.Text : hot ? Theme.Sub : Theme.Alpha(Color.White, 30), r, Theme.F(10), on ? Theme.F(2) : 1);
+                Theme.Stroke(g, on ? Theme.Text : hot ? Theme.Sub : Theme.Alpha(Theme.Ink, 30), r, Theme.F(10), on ? Theme.F(2) : 1);
                 Theme.Write(g, p.Name, Theme.Font(13, FontStyle.Regular, on), on ? Theme.Text : Theme.Sub, new RectangleF(r.X, r.Bottom + Theme.F(4), r.Width, Theme.F(22)), Theme.Center);
                 var name = p.Name;
                 AddHit("th:" + p.Name, new RectangleF(r.X, r.Y, r.Width, r.Height + Theme.F(26)), () => ThemeChanged?.Invoke(name));
                 tx += tsz + Theme.F(12);
             }
-            ly += Theme.F(118);
+            ly += Theme.F(112);
+            bool match = shell.Prefs.ThemeName == "Match Windows";
+            Toggle(g, "mw", x, ly, cw - Theme.F(44), "Match Windows — Light when Windows is set to light, Midnight when it's dark", match, () => ThemeChanged?.Invoke(match ? Theme.ThemeName : "Match Windows"));
+            ly += Theme.F(42);
             Toggle(g, "cc", x, ly, cw - Theme.F(44), "Colors follow the song — AURA takes its color from the cover that's playing", shell.Prefs.CoverColors, () => { shell.Prefs.CoverColors = !shell.Prefs.CoverColors; Changed?.Invoke(); });
             ly += Theme.F(42);
             Toggle(g, "cmp", x, ly, cw - Theme.F(44), "Compact song list — smaller rows, more songs on screen", shell.Prefs.Compact, () => { shell.Prefs.Compact = !shell.Prefs.Compact; Changed?.Invoke(); });
@@ -140,8 +143,46 @@ namespace Aura
                 Theme.Font(13), Theme.Faint, new RectangleF(x, sy + Theme.F(38), cw - Theme.F(60), Theme.F(24)));
             y += h + Theme.F(20);
 
+            // ---- between songs, leveling, radio
+            var mf = FindForm() as MainForm;
+            h = Theme.F(300);
+            x = Card(g, y, h, "Sound", "How one song moves into the next, and how loud each one plays.");
+            float by = y + Theme.F(84);
+            Theme.Write(g, "Between songs", Theme.Font(14), Theme.Sub, new RectangleF(x, by, Theme.F(140), Theme.F(32)));
+            float bpx = x + Theme.F(140);
+            foreach (var (val, label) in new[] { (0, "A short gap"), (-1, "No gap"), (3, "Crossfade 3 s"), (6, "6 s"), (10, "10 s") })
+            {
+                int v = val;
+                bpx = Pill(g, "bt:" + v, bpx, by, label, () => { shell.Prefs.Between = v; shell.Player.Between = v; shell.Prefs.Save(); Invalidate(); }, shell.Prefs.Between == v, null, 32).Right + Theme.F(8);
+            }
+            by += Theme.F(48);
+            Toggle(g, "lvl", x, by, cw - Theme.F(44), "Even out loudness — loud songs are turned down to match the rest (uses what AURA heard while listening)", shell.Prefs.Leveling, () => { shell.Prefs.Leveling = !shell.Prefs.Leveling; shell.Player.Leveling = shell.Prefs.Leveling; shell.Prefs.Save(); Invalidate(); });
+            by += Theme.F(42);
+            Toggle(g, "rad", x, by, cw - Theme.F(44), "Radio — when Up next runs out, keep going with songs like the last one", shell.Prefs.Radio, () => { shell.Prefs.Radio = !shell.Prefs.Radio; shell.Player.Radio = shell.Prefs.Radio; shell.Prefs.Save(); Invalidate(); });
+            by += Theme.F(42);
+            Theme.Write(g, "Speed " + shell.Player.Rate.ToString("0.##") + "×   ·   Sleep timer: the moon button at the bottom   ·   Equalizer: not in this version yet", Theme.Font(13), Theme.Faint, new RectangleF(x, by + Theme.F(6), cw - Theme.F(44), Theme.F(24)));
+            y += h + Theme.F(20);
+
+            // ---- Discord
+            h = Theme.F(shell.Prefs.Discord ? 236 : 190);
+            x = Card(g, y, h, "Discord status", "Shows \"Listening to\" the song you're playing on your Discord profile, while Discord is open on this PC. Discord needs an Application ID: make a free app at discord.com/developers/applications (name it AURA — that name is what people see), then copy its Application ID here.", 60);
+            float dy = y + Theme.F(124);
+            Toggle(g, "dsc", x, dy, cw - Theme.F(44), "Show what I'm listening to on Discord", shell.Prefs.Discord, () =>
+            {
+                shell.Prefs.Discord = !shell.Prefs.Discord;
+                if (shell.Prefs.Discord && shell.Prefs.DiscordApp.Trim().Length == 0) AskDiscordId();
+                shell.Prefs.Save(); mf?.ApplyDiscord(); Invalidate();
+            });
+            if (shell.Prefs.Discord)
+            {
+                dy += Theme.F(44);
+                float dx = Pill(g, "dscid", x, dy, shell.Prefs.DiscordApp.Length > 0 ? "Application ID: " + shell.Prefs.DiscordApp : "Add the Application ID", () => { AskDiscordId(); shell.Prefs.Save(); mf?.ApplyDiscord(); Invalidate(); }, false, "edit", 32).Right + Theme.F(12);
+                Theme.Write(g, mf?.DiscordStatus ?? "", Theme.Font(13), Theme.Faint, new RectangleF(dx, dy, cw - (dx - x) - Theme.F(44), Theme.F(32)));
+            }
+            y += h + Theme.F(20);
+
             // ---- speech (auto-sync and transcribe)
-            h = Theme.F(176);
+            h = Theme.F(374);
             x = Card(g, y, h, "Lyrics in time", "Right-click a song → More → \"Write lyrics in time\" to time its lyrics to the song (auto-sync), or to write them down by listening (transcribe). It uses Whisper, on this PC. Each model downloads once.", 60);
             float wy = y + Theme.F(124), wx = x;
             bool any = false;
@@ -159,6 +200,40 @@ namespace Aura
                 }, false, "trash", 32, "Delete this model").Right + Theme.F(8);
             }
             if (!any) Theme.Write(g, Whisper.Load() ? "No models downloaded yet." : "Not available: " + Whisper.LoadError + ".", Theme.Font(13), Theme.Faint, new RectangleF(x, wy, cw - Theme.F(60), Theme.F(30)));
+            wy += Theme.F(46);
+            Toggle(g, "asa", x, wy, cw - Theme.F(44), "Time every song by itself — slowly, in the background, songs that have lyrics but no timings", shell.Prefs.AutoSyncAll, () => { shell.Prefs.AutoSyncAll = !shell.Prefs.AutoSyncAll; shell.Prefs.Save(); mf?.AutoSyncChanged(); Invalidate(); });
+            wy += Theme.F(38);
+            Theme.Write(g, mf?.AutoSyncStatus ?? "", Theme.Font(12.5f), Theme.Faint, new RectangleF(x + Theme.F(56), wy - Theme.F(4), cw - Theme.F(100), Theme.F(22)));
+            wy += Theme.F(24);
+            Toggle(g, "loa", x, wy, cw - Theme.F(44), "After writing lyrics down, look online for the real words and line them up", shell.Prefs.LookOnlineAfterTranscribe, () => { shell.Prefs.LookOnlineAfterTranscribe = !shell.Prefs.LookOnlineAfterTranscribe; shell.Prefs.Save(); Invalidate(); });
+            wy += Theme.F(44);
+            Theme.Write(g, "Take the vocals out first", Theme.Font(14), Theme.Sub, new RectangleF(x, wy, Theme.F(200), Theme.F(32)));
+            float spx = x + Theme.F(200);
+            foreach (var (val, label) in new[] { ("transcribe", "When writing down"), ("always", "Always"), ("off", "Never") })
+            {
+                string v = val;
+                spx = Pill(g, "sep:" + v, spx, wy, label, () => { shell.Prefs.Separate = v; shell.Prefs.Save(); Invalidate(); }, shell.Prefs.Separate == v, null, 32).Right + Theme.F(8);
+            }
+            Theme.Write(g, Separator.Ready ? "Uses the MDX-Net vocal model (" + Separator.SizeText + ", downloaded)." : "Uses the MDX-Net vocal model — it downloads once (about 65 MB) the first time it's needed. Helps a lot with loud music.", Theme.Font(12.5f), Theme.Faint, new RectangleF(x, wy + Theme.F(38), cw - Theme.F(44), Theme.F(22)));
+            y += h + Theme.F(20);
+
+            // ---- undo
+            var steps = shell.Lib.UndoSteps().Take(6).ToList();
+            h = Theme.F(110) + Math.Max(1, steps.Count) * Theme.F(42);
+            x = Card(g, y, h, "Undo", "Tag changes, eras and ratings can be put back. Ctrl+Z undoes the last one.");
+            float uy0 = y + Theme.F(86);
+            if (steps.Count == 0) Theme.Write(g, "Nothing to undo.", Theme.Font(13), Theme.Faint, new RectangleF(x, uy0, cw, Theme.F(30)));
+            foreach (var st in steps)
+            {
+                var r = new RectangleF(x, uy0, cw - Theme.F(44), Theme.F(36));
+                Theme.Fill(g, Theme.Surface2, r, Theme.F(9));
+                var when = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc).AddSeconds(st.Ts).ToLocalTime();
+                Theme.Write(g, st.Label + "  ·  " + Theme.Count(st.Rows.Count, "song"), Theme.Font(13.5f), Theme.Text, new RectangleF(r.X + Theme.F(14), r.Y, r.Width - Theme.F(260), r.Height));
+                Theme.Write(g, when.ToString("MMM d, h:mm tt"), Theme.Font(12.5f), Theme.Faint, new RectangleF(r.Right - Theme.F(250), r.Y, Theme.F(140), r.Height));
+                var ss = st;
+                Pill(g, "undo:" + st.Id, r.Right - Theme.F(100), r.Y + Theme.F(3), "Undo", () => { mf?.Undo(ss); Invalidate(); }, false, null, 30);
+                uy0 += Theme.F(42);
+            }
             y += h + Theme.F(20);
 
             // ---- updates
@@ -188,6 +263,15 @@ namespace Aura
             Pill(g, "open", x, ay + Theme.F(6), "Open that folder", () => { try { Process.Start("explorer.exe", "\"" + App.DataDir + "\""); } catch { } }, false, "folder", 34);
             y += h + Theme.F(40);
             ContentHeight = y;
+        }
+
+        void AskDiscordId()
+        {
+            var id = Ask.ForText(FindForm(), "Discord Application ID", "Paste the Application ID of your Discord app (a long number, from discord.com/developers/applications → your app → General Information).", shell.Prefs.DiscordApp, "Save", true);
+            if (id == null) return;
+            id = new string(id.Where(char.IsDigit).ToArray());
+            shell.Prefs.DiscordApp = id;
+            if (id.Length == 0) shell.Prefs.Discord = false;
         }
 
         protected override void OnBackButton() => shell.Back();

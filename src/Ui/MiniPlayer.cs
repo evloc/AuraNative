@@ -116,7 +116,7 @@ namespace Aura
             Theme.Fill(g, Theme.Alpha(Theme.Text, 30), sr, 0);
             Theme.Fill(g, Theme.Accent, new RectangleF(0, sr.Y, Width * Math.Max(0, Math.Min(1, k)), sr.Height), 0);
             if (P.Looping && dur > 0)
-                Theme.Fill(g, Theme.Alpha(Color.White, 70), new RectangleF((float)(P.LoopA / dur) * Width, sr.Y, (float)((P.LoopB - P.LoopA) / dur) * Width, sr.Height), 0);
+                Theme.Fill(g, Theme.Alpha(Theme.Ink, 70), new RectangleF((float)(P.LoopA / dur) * Width, sr.Y, (float)((P.LoopB - P.LoopA) / dur) * Width, sr.Height), 0);
             var hit = AddHit("seek", new RectangleF(0, Height - Theme.F(12), Width, Theme.F(12)), null, null);
             hit.Cursor = Cursors.Hand;
             hit.DragTo = p => { if (t != null) { seekDrag = Math.Max(0, Math.Min(1, p.X / Width)); Invalidate(); } };
