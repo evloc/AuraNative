@@ -21,14 +21,67 @@ namespace Aura
         {
             this.shell = shell;
             Scrollable = false;
-            tick.Tick += (s, e) => { minimized = FindForm()?.WindowState == FormWindowState.Minimized; if (!shell.Player.IsPlaying) Invalidate(); };
+            tick.Tick += (s, e) =>
+            {
+                minimized = FindForm()?.WindowState == FormWindowState.Minimized;
+                // with the graphics-card lyrics, the page itself only needs the waveform moving now and then
+                tick.Interval = UsingHost && shell.Player.IsPlaying ? 120 : 250;
+                if (!shell.Player.IsPlaying || UsingHost) Invalidate();
+            };
             tick.Start();
-            frames = new FrameClock(this, () => Visible && shell.Player.IsPlaying && FullLyricsForm.Open == 0 && !Minimized);
+            frames = new FrameClock(this, () => Visible && shell.Player.IsPlaying && FullLyricsForm.Open == 0 && !Minimized && !UsingHost);
+#if WPF
+            if (Aura.Wpf.WpfUi.Available)
+            {
+                try
+                {
+                    host = new Aura.Wpf.LyricsHost { Visible = false };
+                    host.Position = () => shell.Player.SmoothPosition;
+                    host.View.Seek = sec => shell.Player.Seek(sec);
+                    Controls.Add(host);
+                }
+                catch (Exception e) { Aura.Wpf.WpfUi.Failed(e); host = null; }
+            }
+#endif
             Reload();
         }
 
         bool minimized;
         bool Minimized => minimized;
+#if WPF
+        Aura.Wpf.LyricsHost host;
+        Rectangle hostArea; Bitmap hostBg;
+        bool UsingHost => host != null && host.Visible;
+        // the lyrics drawn by the graphics card, placed over the lyrics area
+        bool HostLyrics(Lyrics l, Track t)
+        {
+            if (host == null) return false;
+            try
+            {
+                var area = Rectangle.Round(lyricsArea);
+                host.View.Stage = false;
+                host.View.Glow = Aura.Wpf.LyricsView.C(Theme.Mix(Theme.AccentTarget, Color.White, 0.4f));
+                host.View.Set(l, t.Id);
+                if (area != hostArea || !ReferenceEquals(hostBg, backdrop))
+                {
+                    hostArea = area; hostBg = backdrop;
+                    host.SetBounds(area.X, area.Y, area.Width, area.Height);
+                    if (backdrop != null) host.SetBackground(backdrop, area); else host.SetSolid(Theme.Bg);
+                }
+                if (!host.Visible) { host.Visible = true; host.StepOnce(); }
+                bool run = shell.Player.IsPlaying && !Minimized && FullLyricsForm.Open == 0 && !Aura.Wpf.WpfUi.StageOpen;
+                host.Run(run);
+                if (!run) host.StepOnce();
+                return true;
+            }
+            catch (Exception e) { Aura.Wpf.WpfUi.Failed(e); try { host.Visible = false; } catch { } host = null; return false; }
+        }
+        void HideHost() { if (host != null && host.Visible) { host.Run(false); host.Visible = false; } }
+#else
+        bool UsingHost => false;
+        bool HostLyrics(Lyrics l, Track t) => false;
+        void HideHost() { }
+#endif
 
         public void Reload()
         {
@@ -72,6 +125,7 @@ namespace Aura
             if (t != shown) Reload();
             if (t == null)
             {
+                HideHost();
                 Theme.Write(g, "Nothing playing", Theme.Font(30, FontStyle.Bold), Theme.Text, new RectangleF(Theme.F(40), Theme.F(40), Width, Theme.F(44)));
                 Theme.Write(g, "Pick a song, or shuffle everything.", Theme.Font(15), Theme.Sub, new RectangleF(Theme.F(40), Theme.F(92), Width, Theme.F(26)));
                 if (shell.Lib.Tracks.Count > 0) Pill(g, "shuf", Theme.F(40), Theme.F(136), "Shuffle everything", () => shell.Player.ShuffleAll(shell.Lib.Tracks.ConvertAll(x => x.Id)), true, "shuffle", 42);
@@ -153,6 +207,7 @@ namespace Aura
             float hy = lyricsArea.Y - Theme.F(40);
             if (l == null)
             {
+                HideHost();
                 Theme.Write(g, "No lyrics for this song yet", Theme.Font(22, FontStyle.Bold), Theme.Text, new RectangleF(lyricsArea.X, lyricsArea.Y + Theme.F(20), lyricsArea.Width, Theme.F(32)));
                 string why = t.Artist.Trim().Length == 0 ? "Give it an artist tag and AURA can look for them online. Or press Find lyrics to search yourself."
                     : shell.Prefs.AutoLyrics ? "AURA looks online by itself for songs without lyrics. Unreleased songs often aren't online anywhere — press Find lyrics to search yourself."
@@ -172,6 +227,7 @@ namespace Aura
                 Theme.Write(g, "Remove these", f, Hover("rm") ? Theme.Text : Theme.Faint, rr, Theme.Right);
                 AddHit("rm", rr, () => { shell.Lyrics.Remove(t); Reload(); }, "Wrong song? Remove the lyrics AURA found");
             }
+            if (HostLyrics(l, t)) return;
             pane.Stage = false;
             pane.Glow = Theme.Mix(Theme.AccentTarget, Color.White, 0.4f);
             pane.Draw(g, lyricsArea, shell.Player.SmoothPosition, this, sec => shell.Player.Seek(sec));

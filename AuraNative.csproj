@@ -13,7 +13,7 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <PlatformTarget>AnyCPU</PlatformTarget>
     <Prefer32Bit>false</Prefer32Bit>
-    <Version>0.4.2</Version>
+    <Version>0.4.3</Version>
     <Product>AURA Native</Product>
     <Company>AURA</Company>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
@@ -33,6 +33,24 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Remove="native/**;build/**" />
+  </ItemGroup>
+  <!-- The smooth lyrics and full screen are drawn by the graphics card with WPF (part of Windows' .NET) -->
+  <PropertyGroup Condition="'$(OS)' == 'Windows_NT'">
+    <DefineConstants>$(DefineConstants);WPF</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(OS)' == 'Windows_NT'">
+    <Reference Include="PresentationCore" />
+    <Reference Include="PresentationFramework" />
+    <Reference Include="WindowsBase" />
+    <Reference Include="System.Xaml" />
+    <Reference Include="WindowsFormsIntegration" />
+  </ItemGroup>
+  <!-- On Linux (testing only) the WPF parts are compile-checked against stand-ins, when they're there -->
+  <PropertyGroup Condition="'$(OS)' != 'Windows_NT' And Exists('$(WpfStubs)')">
+    <DefineConstants>$(DefineConstants);WPF</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(OS)' != 'Windows_NT' And Exists('$(WpfStubs)')">
+    <Reference Include="WpfStubs"><HintPath>$(WpfStubs)</HintPath><Private>false</Private></Reference>
   </ItemGroup>
   <ItemGroup>
     <Reference Include="System.Windows.Forms" />

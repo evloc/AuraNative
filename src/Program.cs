@@ -153,6 +153,10 @@ namespace Aura
                 lines.Add("listen       : ok (" + s2.Print.Length + " steps)");
             }
             catch (Exception e) { lines.Add("sound        : not available here (" + e.Message + ")"); }
+#if WPF
+            try { lines.Add("graphics card: " + Aura.Wpf.WpfUi.SelfTest()); }
+            catch (Exception e) { ok = false; lines.Add("graphics card: FAILED " + e); }
+#endif
             // speech recognition: must load when it's installed
             if (Whisper.Load()) lines.Add("speech       : ok");
             else if (Whisper.LoadError.Contains("isn't installed")) lines.Add("speech       : not installed");

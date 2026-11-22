@@ -333,8 +333,19 @@ namespace Aura
         }
 
         // ---------- now playing ----------
+#if WPF
+        Action closeStage;
+#endif
         public void FullScreenLyrics()
         {
+#if WPF
+            if (closeStage != null) { var c = closeStage; closeStage = null; c(); return; }
+            if (Aura.Wpf.WpfUi.Available)
+            {
+                closeStage = Aura.Wpf.WpfUi.OpenStage(this, this, Screen.FromControl(this), () => { closeStage = null; Activate(); });
+                if (closeStage != null) return;
+            }
+#endif
             if (full != null && !full.IsDisposed) { full.Close(); return; }
             full = new FullLyricsForm(this, Screen.FromControl(this));
             full.FormClosed += (s, e) => { full = null; Activate(); };

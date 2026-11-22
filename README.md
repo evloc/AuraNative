@@ -37,9 +37,10 @@ installed side by side, and each keeps its own library:
   with how loud the song is, stars that speed up on the big parts) and jumps
   to a new sky with a warp when the song changes. The current line glows and
   fills in word by word. F11 to open; Esc to leave; Space, ←/→, N/P work there.
-- **Smooth** — lyrics and animations are drawn in step with the screen's
-  refresh, and covers are prepared once per size, so scrolling and lyrics
-  don't stutter.
+- **Smooth** — the lyrics (in Now Playing and full screen) and the space scene
+  are drawn by the graphics card (WPF, built into Windows), so they glide
+  instead of stuttering. If that can't start, AURA falls back to its older
+  drawing by itself. Covers are prepared once per size, so lists scroll smoothly.
 - **Lyrics from everywhere** — lyrics already in your songs (including the
   timings and word timings the first AURA saves), a `.lrc` file next to the
   song, or found online. AURA looks on LRCLIB, Genius and lyrics.ovh by itself for songs

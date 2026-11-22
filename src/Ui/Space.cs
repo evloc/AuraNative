@@ -76,7 +76,7 @@ namespace Aura
             if (first && bg == null) { /* black until it's ready (a fraction of a second) */ }
         }
 
-        static Bitmap Paint(Size s, Color c)
+        internal static Bitmap Paint(Size s, Color c)
         {
             int W = s.Width, H = s.Height;
             var b = new Bitmap(W, H, PixelFormat.Format32bppPArgb);

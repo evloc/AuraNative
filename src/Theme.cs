@@ -113,7 +113,7 @@ namespace Aura
         static string family;
         static readonly Dictionary<(float, FontStyle, bool), Font> fonts = new Dictionary<(float, FontStyle, bool), Font>();
 
-        static string Family
+        public static string Family
         {
             get
             {
