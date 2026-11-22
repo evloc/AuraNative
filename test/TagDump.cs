@@ -22,6 +22,7 @@ static class TagDump {
     try { TagWriter.Write(args[0], e); Console.WriteLine("OK " + Path.GetFileName(args[0])); return 0; }
     catch (Exception x) { Console.WriteLine("ERR " + Path.GetFileName(args[0]) + ": " + x.Message); return 1; }
   }
+  public static int Sniff(string[] files) { foreach (var p in files) Console.WriteLine(Path.GetFileName(p) + "\t" + (AudioKind.Detect(p) ?? "?") + "\t" + AudioKind.Matches(p, AudioKind.Detect(p))); return 0; }
   public static int Lyrics(string[] files) {
     Console.OutputEncoding = new System.Text.UTF8Encoding(false);
     foreach (var p in files) {

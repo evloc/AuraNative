@@ -40,7 +40,7 @@ namespace Aura
                     else if (n >= 12 && Ascii(head, 0, 4) == "RIFF" && Ascii(head, 8, 4) == "WAVE") Wav(f, t, wantPicture);
                     else if (n >= 12 && Ascii(head, 0, 4) == "FORM" && (Ascii(head, 8, 4) == "AIFF" || Ascii(head, 8, 4) == "AIFC")) Aiff(f, t, wantPicture);
                     else if (n >= 8 && Ascii(head, 4, 4) == "ftyp") Mp4(f, t, wantPicture);
-                    else if (n >= 3 && Ascii(head, 0, 3) == "ID3" && ext == ".flac") { SkipId3(f); Flac(f, t, wantPicture); }
+                    else if (n >= 3 && Ascii(head, 0, 3) == "ID3" && ext == ".flac" && FlacAfterId3(f)) Flac(f, t, wantPicture);
                     else if (ext == ".mp3" || ext == ".aac" || (n >= 3 && Ascii(head, 0, 3) == "ID3") || (n >= 2 && head[0] == 0xFF && (head[1] & 0xE0) == 0xE0)) Mp3(f, t, wantPicture);
                 }
             }
@@ -100,6 +100,16 @@ namespace Aura
             if (m.Success) g = m.Groups[2].Value.Trim().Length > 0 ? m.Groups[2].Value.Trim() : m.Groups[1].Value;
             if (int.TryParse(g, out int k) && k >= 0 && k < Genres.Length) g = Genres[k];
             return g;
+        }
+
+        // a FLAC with an ID3 tag stuck in front (rare), rather than an MP3 named .flac
+        static bool FlacAfterId3(Stream f)
+        {
+            SkipId3(f);
+            var m = ReadN(f, 4);
+            bool flac = m.Length == 4 && Ascii(m, 0, 4) == "fLaC";
+            f.Position = flac ? f.Position - 4 : 0;
+            return flac;
         }
 
         // ---------- ID3v2 ----------

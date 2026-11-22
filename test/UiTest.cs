@@ -371,6 +371,21 @@ namespace Aura
                 Ok(Conv.L(L.Db.Scalar("SELECT COUNT(*) FROM lyrics_tried WHERE track_id=?", T("Wasted").Id)) == 1, "and AURA won't look for them again by itself");
                 return true;
             });
+            Step("one site blocked", () =>
+            {
+                var keep = LyricsOnline.GeniusUrl;
+                LyricsOnline.GeniusUrl = "http://127.0.0.1:1";          // Genius refusing
+                var r = LyricsOnline.Search(T("Hear Me Calling"));
+                Ok(!r.Offline, "LRCLIB answering with no results while Genius is blocked isn't \"couldn't reach the sites\"");
+                var keepL = LyricsOnline.LrclibUrl;
+                LyricsOnline.LrclibUrl = "http://127.0.0.1:1";
+                r = LyricsOnline.Search(T("Hear Me Calling"));
+                Ok(r.Offline, "both sites failing still is");
+                LyricsOnline.GeniusUrl = keep; LyricsOnline.LrclibUrl = keepL;
+                var log = File.ReadAllText(Path.Combine(App.DataDir, "error.log"));
+                Ok(log.Contains("lyrics: Genius didn't answer"), "and which site failed is written in error.log");
+                return true;
+            });
             Step("update check", () => { Updater.Check(true); return true; });
             Step("update found", () =>
             {
@@ -559,14 +574,66 @@ namespace Aura
         static void PlaybackScript()
         {
             var problems = new List<string>();
-            Step("scan", () => { P.Problem += m => problems.Add(m); return !L.Scan.Running && L.Tracks.Count >= 4; });
-            Step("all found", () => { Ok(L.Tracks.Count == 4, "songs in awkward folders and with long or odd names are found (" + L.Tracks.Count + ")"); return true; });
+            Step("scan", () => { P.Problem += m => problems.Add(m); return !L.Scan.Running && L.Tracks.Count >= 6; });
+            Step("all found", () => { Ok(L.Tracks.Count == 6, "songs in awkward folders and with long or odd names are found (" + L.Tracks.Count + ")"); return true; });
             foreach (var name in new[] { "Space Folder Song", "Hash Song", "Long Path Song" })
             {
                 var nm = name;
                 Step("play " + nm, () => { P.PlayList(new[] { T(nm).Id }.ToList()); return true; });
                 Step("playing " + nm, () => { if (!Pause(10)) return false; Ok(P.IsPlaying && P.Current?.Name == nm && P.Position > 0.5, nm + " plays"); return true; });
             }
+            Step("disguised file", () => { P.PlayList(new[] { T("Disguised M4A").Id }.ToList()); return true; });
+            Step("disguised plays", () =>
+            {
+                if (!Pause(10)) return false;
+                var log = File.ReadAllText(Path.Combine(App.DataDir, "error.log"));
+                Ok(P.IsPlaying && P.Current?.Name == "Disguised M4A" && log.Contains("is really M4A"), "an M4A named .mp3 is noticed and played as what it really is");
+                var copies = Directory.GetFiles(Path.Combine(Path.GetTempPath(), "AURA Native", "play"));
+                Ok(copies.Any(c => c.EndsWith(".m4a")), "using a copy with the right ending (the song itself isn't touched)");
+                return true;
+            });
+            Step("fix type", () =>
+            {
+                var t = T("Disguised M4A");
+                F.FixTypes(new List<(Track, string)> { (t, ".m4a") });
+                Ok(t.Path.EndsWith(".m4a") && File.Exists(t.Path) && P.Current == t, "Fix file type renames it to .m4a and keeps playing");
+                return true;
+            });
+            Step("converted while open", () =>
+            {
+                var t = T("Convert Me");
+                var pl = L.CreatePlaylist("Has the wav", new[] { t.Id });
+                L.SetFav(t, true);
+                var mp3 = Path.ChangeExtension(t.Path, ".mp3");
+                File.Copy(Path.Combine(Path.GetDirectoryName(T("Space Folder Song").Path), "song.mp3"), mp3);
+                File.Delete(t.Path);        // like the first AURA's converter: the WAV goes, an MP3 comes
+                return true;
+            });
+            Step("converted picked up", () =>
+            {
+                var t = L.Tracks.FirstOrDefault(x => x.Path.EndsWith("convert.mp3"));
+                if (t == null || L.Scan.Running) return false;
+                if (!Pause(4)) return false;
+                var pl = L.Playlists.First(p => p.Name == "Has the wav");
+                Ok(L.Tracks.Count(x => Path.GetFileNameWithoutExtension(x.Path) == "convert") == 1, "the converted MP3 replaces the WAV instead of showing twice");
+                Ok(pl.Items.Count == 1 && L.Get(pl.Items[0]) == t && t.Fav, "it keeps the WAV's playlists and favorite");
+                return true;
+            });
+            Step("swapped just before play", () =>
+            {
+                var t = L.Tracks.First(x => x.Path.Contains("Trailing Space Folder"));
+                var to = Path.ChangeExtension(t.Path, ".flac");
+                File.Move(t.Path, to);
+                problems.Clear();
+                P.PlayList(new[] { t.Id }.ToList());
+                return true;
+            });
+            Step("swapped plays", () =>
+            {
+                if (!Pause(6)) return false;
+                Ok(P.IsPlaying && P.Current?.Name == "Space Folder Song" && P.Current.Path.Contains("Trailing Space Folder") && P.Current.Path.EndsWith(".flac") && problems.Count == 0, "pressing play on a song whose file changed ending finds it and plays (" + string.Join("; ", problems) + " | playing=" + P.IsPlaying + " cur=" + P.Current?.Name + " path=" + P.Current?.Path + ")");
+                return true;
+            });
             Step("broken one", () => { problems.Clear(); P.PlayList(new[] { T("Broken Song").Id, T("Hash Song").Id }.ToList()); return true; });
             Step("backup engine", () =>
             {

@@ -313,6 +313,13 @@ namespace Aura
             return Regex.Replace(string.Join("\n", lines), @"\n{3,}", "\n\n").Trim();
         }
 
+        static readonly HashSet<string> logged = new HashSet<string>();
+        static void LogOnce(string site, string why)
+        {
+            lock (logged) { if (!logged.Add(site + why)) return; }
+            App.Log("lyrics: " + site + " didn't answer: " + why);
+        }
+
         public sealed class Result { public List<Found> Found = new List<Found>(); public bool Offline; public string Query = ""; }
 
         // searches both sites at once (about 9 seconds at most)
@@ -329,20 +336,20 @@ namespace Aura
                 if (title.Length > 0 && title != q1) queries.Add(title);
             }
             var res = new Result { Query = queries.FirstOrDefault() ?? "" };
-            var tasks = new List<Task<List<Found>>>();
+            var tasks = new List<(string site, Task<List<Found>> task)>();
             foreach (var q in queries)
             {
                 var qq = q;
-                tasks.Add(Task.Run(() => Lrclib(qq)));
-                tasks.Add(Task.Run(() => Genius(qq)));
+                tasks.Add(("LRCLIB", Task.Run(() => Lrclib(qq))));
+                tasks.Add(("Genius", Task.Run(() => Genius(qq))));
             }
-            try { Task.WaitAll(tasks.ToArray(), 9000); } catch { }
+            try { Task.WaitAll(tasks.Select(x => (Task)x.task).ToArray(), 9000); } catch { }
             int errors = 0;
             var all = new List<Found>();
-            foreach (var tk in tasks)
+            foreach (var (site, tk) in tasks)
             {
                 if (tk.Status == TaskStatus.RanToCompletion) all.AddRange(tk.Result);
-                else errors++;
+                else { errors++; LogOnce(site, tk.IsFaulted ? tk.Exception?.GetBaseException().Message : "took too long"); }
             }
             double dur = t.Duration;
             // the same song is often listed several times at different lengths: keep the one closest to this file
@@ -361,7 +368,8 @@ namespace Aura
                 r.Score = sc;
             }
             res.Found = best.Values.OrderByDescending(r => r.Score).Take(10).ToList();
-            res.Offline = errors > 0 && all.Count == 0;
+            // "offline" only when every site failed — no results for an unreleased song isn't being offline
+            res.Offline = errors == tasks.Count;
             return res;
         }
 

@@ -56,6 +56,12 @@ installed side by side, and each keeps its own library:
   side by side; switch versions in Now Playing without losing your place.
 - **Stats** — listening time, plays by day or month, top songs and artists.
 - **Themes** — Midnight, Neon, Sunset, Ocean and Mono.
+- **Plays awkward files** — songs whose path is very long or has a folder
+  ending in a space; files that are really M4A, Opus, FLAC or WAV but named
+  .mp3 (right-click → More → Fix file type renames them properly); and if
+  Windows' main player engine can't open a song, a second engine tries.
+- **Follows converted songs** — when song.wav becomes song.mp3 (the first
+  AURA's converter), it stays the same song with its plays and playlists.
 - **Updates itself** — when a new version is on GitHub, an Update button shows
   at the top; AURA installs it and opens again.
 - **Picks up where you left off** — same song, same place, same queue.

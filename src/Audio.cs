@@ -43,7 +43,7 @@ namespace Aura
     sealed class WmpAudio : IAudio
     {
         dynamic w;
-        bool wantPlay, sawPlaying;
+        bool wantPlay, sawPlaying, nudged;
         readonly Stopwatch sincePlay = new Stopwatch();
         public string Name => "Windows Media";
 
@@ -66,7 +66,7 @@ namespace Aura
 
         public bool Load(string path)
         {
-            wantPlay = false; sawPlaying = false; pending = -1;
+            wantPlay = false; sawPlaying = false; pending = -1; nudged = false;
             var p = FileX.ForPlayer(path);
             try { w.URL = p; return true; } catch (Exception e) { App.Log("Windows Media couldn't open " + path + (p != path ? " (as " + p + ")" : "") + ": " + e.Message); return false; }
         }
@@ -101,15 +101,18 @@ namespace Aura
                 case 0:
                     // WMP drops to "stopped/ready" once a song finishes
                     if (wantPlay && sawPlaying) return PlayState.Ended;
-                    if (wantPlay && sincePlay.Elapsed.TotalSeconds > 5) return PlayState.Failed;     // it never started
+                    if (wantPlay && s == 10 && !nudged && sincePlay.Elapsed.TotalSeconds > 1.5) { nudged = true; try { w.controls.play(); } catch { } }   // opened, didn't start: ask again
+                    if (wantPlay && sincePlay.Elapsed.TotalSeconds > 8) { App.Log("Windows Media: stuck (play state " + s + ", open state " + OpenState + ")"); return PlayState.Failed; }     // it never started
                     return wantPlay ? PlayState.Playing : PlayState.Stopped;
                 default:
-                    if (wantPlay && !sawPlaying && sincePlay.Elapsed.TotalSeconds > 12) return PlayState.Failed;
+                    if (wantPlay && !sawPlaying && sincePlay.Elapsed.TotalSeconds > 15) { App.Log("Windows Media: stuck (play state " + s + ", open state " + OpenState + ")"); return PlayState.Failed; }
                     return wantPlay ? PlayState.Playing : PlayState.Paused;
             }
         }
 
         public void Unload() { wantPlay = false; pending = -1; try { w.controls.stop(); w.close(); } catch { } }
+
+        string OpenState { get { try { return ((int)w.openState).ToString(); } catch { return "?"; } } }
 
         public string LastError
         {
@@ -141,8 +144,9 @@ namespace Aura
         {
             if (open) Send("close aura");
             var p = Win.ShortPath(path) ?? path;     // MCI is happiest with short, plain paths
-            open = Send("open \"" + p + "\" type mpegvideo alias aura") != null;
-            if (!open) App.Log("MCI couldn't open " + path);
+            open = Send("open \"" + p + "\" type mpegvideo alias aura") != null
+                || Send("open \"" + p + "\" alias aura") != null;
+            if (!open) App.Log("MCI couldn't open " + path + "  [inside it's " + AudioKind.Name(AudioKind.Detect(path)) + "; starts " + AudioKind.Header(path) + "]");
             if (open) Send("set aura time format milliseconds");
             wantPlay = false;
             return open;

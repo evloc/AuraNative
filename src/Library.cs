@@ -228,6 +228,7 @@ CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT)";
             foreach (var r in Db.Rows("SELECT id,path,size,mtime,missing FROM tracks"))
                 known[Conv.S(r[1])] = (Conv.L(r[0]), Conv.L(r[2]), Conv.D(r[3]), Conv.L(r[4]) != 0);
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var newPaths = new List<string>();
             var roots = new List<string>();
             var pending = new List<Action>();
             double lastUi = 0;
@@ -265,6 +266,7 @@ CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT)";
                     else
                     {
                         Scan.Added++;
+                        newPaths.Add(path);
                         double added = Math.Min(Now, mtime > 0 ? mtime : Now);
                         pending.Add(() => Db.Exec("INSERT OR IGNORE INTO tracks (path,size,mtime,title,artist,album,albumartist,year,genre,track_no,duration,has_art,added,has_lyrics) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                             path, size, mtime, t.Title, t.Artist, t.Album, t.AlbumArtist, t.Year, t.Genre, trackNo, t.Duration, t.HasPicture, added, hasLyr));
@@ -274,6 +276,19 @@ CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT)";
                 }
             }
             Flush();
+            // a song converted to another format (song.wav -> song.mp3) is still the same song:
+            // it keeps its plays, playlists, favorites and lyrics
+            var fresh = newPaths.GroupBy(StemKey).Where(g => g.Count() == 1).ToDictionary(g => g.Key, g => g.First());
+            if (fresh.Count > 0)
+                Db.Tx(() =>
+                {
+                    foreach (var kv in known.ToList())
+                    {
+                        if (seen.Contains(kv.Key) || FileX.Exists(kv.Key)) continue;
+                        if (!fresh.TryGetValue(StemKey(kv.Key), out var np)) continue;
+                        if (MoveSong(kv.Value.id, np)) { fresh.Remove(StemKey(kv.Key)); seen.Add(kv.Key); Scan.Added--; }
+                    }
+                });
             // songs that are gone from folders that were scanned (or from folders no longer in the list)
             var wanted = folders.Where(f => !string.IsNullOrWhiteSpace(f)).Select(f => Norm(f) + "\\").ToList();
             Db.Tx(() =>
@@ -291,6 +306,46 @@ CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT)";
                     }
                 }
             });
+        }
+
+        static string StemKey(string p) => Norm(Path.Combine(Path.GetDirectoryName(p) ?? "", Path.GetFileNameWithoutExtension(p)));
+
+        // points song "id" at the file a newer row has, and drops that newer row
+        bool MoveSong(long id, string newPath)
+        {
+            var row = Db.Rows("SELECT id,size,mtime,title,artist,album,albumartist,year,genre,track_no,duration,has_art,has_lyrics FROM tracks WHERE path=?", newPath).FirstOrDefault();
+            if (row == null) return false;
+            long other = Conv.L(row[0]);
+            if (other == id) return false;
+            Db.Exec("DELETE FROM tracks WHERE id=?", other);
+            Db.Exec("DELETE FROM playlist_items WHERE track_id=?", other);
+            Db.Exec("DELETE FROM favorites WHERE track_id=?", other);
+            Db.Exec("UPDATE tracks SET path=?,size=?,mtime=?,title=?,artist=?,album=?,albumartist=?,year=?,genre=?,track_no=?,duration=?,has_art=?,has_lyrics=?,missing=0 WHERE id=?",
+                newPath, row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9], row[10], row[11], row[12], id);
+            App.Log("song " + id + " now uses " + newPath);
+            return true;
+        }
+
+        // when a song's file is gone: the same name with another ending in the same folder (a converted copy)
+        public bool Relocate(Track t)
+        {
+            try
+            {
+                var dir = Path.GetDirectoryName(t.Path);
+                var stem = Path.GetFileNameWithoutExtension(t.Path);
+                if (dir == null || !Directory.Exists(FileX.Long(dir))) return false;
+                var match = Tags.Extensions.Select(e => Path.Combine(dir, stem + e)).Where(p => !string.Equals(p, t.Path, StringComparison.OrdinalIgnoreCase)).FirstOrDefault(FileX.Exists);
+                if (match == null) return false;
+                bool known = Conv.L(Db.Scalar("SELECT COUNT(*) FROM tracks WHERE path=?", match)) > 0;
+                if (known) { if (!MoveSong(t.Id, match)) return false; }
+                else Db.Exec("UPDATE tracks SET path=? WHERE id=?", match, t.Id);
+                var gone = Tracks.FirstOrDefault(x => x.Id != t.Id && string.Equals(x.Path, match, StringComparison.OrdinalIgnoreCase));
+                if (gone != null) { Tracks.Remove(gone); ById.Remove(gone.Id); foreach (var p in Playlists) p.Items.RemoveAll(i => i == gone.Id); }
+                t.Path = match;
+                Refresh(t);
+                return true;
+            }
+            catch (Exception e) { App.Log("relocate " + t.Path + ": " + e.Message); return false; }
         }
 
         // ---------- after AURA changes a file ----------

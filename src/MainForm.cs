@@ -458,6 +458,23 @@ namespace Aura
             }
         }
 
+        // renames "song.mp3" that is really an M4A to "song.m4a", so every player opens it
+        internal void FixTypes(List<(Track t, string k)> wrong)
+        {
+            var held = Player.Release(wrong.Select(x => x.t.Id).ToList());
+            int done = 0; var failed = new List<string>();
+            foreach (var (t, k) in wrong)
+            {
+                var to = Path.ChangeExtension(t.Path, k == ".aiff" ? ".aiff" : k);
+                if (FileX.Exists(to)) { failed.Add(Path.GetFileName(t.Path) + ": " + Path.GetFileName(to) + " already exists"); continue; }
+                try { Lib.Rename(t, to); done++; }
+                catch (Exception x) { failed.Add(Path.GetFileName(t.Path) + ": " + x.Message); }
+            }
+            Player.Restore(held);
+            OnLibraryChanged();
+            Toast(failed.Count == 0 ? "Fixed " + Theme.Count(done, "file") : "Fixed " + done + ", " + failed.Count + " couldn't be: " + failed[0]);
+        }
+
         public void InstallUpdate()
         {
             if (!Updater.Available) return;
@@ -539,6 +556,9 @@ namespace Aura
             Menus.Sub(more);
             more.DropDownItems.Add(Menus.Item("Fill in blanks from file names", () => FillFromNames(tracks)));
             more.DropDownItems.Add(Menus.Item("Rename files…", () => RenameFiles(tracks)));
+            var wrong = tracks.Take(200).Select(t => (t, k: AudioKind.Detect(t.Path))).Where(x => x.k != null && !AudioKind.Matches(x.t.Path, x.k)).ToList();
+            if (wrong.Count > 0)
+                more.DropDownItems.Add(Menus.Item(wrong.Count == 1 ? "Fix file type (it's really " + AudioKind.Name(wrong[0].k) + ")" : "Fix file type for " + wrong.Count + " songs", () => FixTypes(wrong)));
             if (one != null) more.DropDownItems.Add(Menus.Item("Find lyrics…", () => FindLyrics(one)));
             m.Items.Add(more);
             if (one != null)

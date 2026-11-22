@@ -155,7 +155,8 @@ namespace Aura
             var t = lib.Get(Queue[Order[Pos]]);
             string why = null;
             if (t == null) why = "That song isn't in your library any more";
-            else if (!FileX.Exists(t.Path)) { why = "Can't find " + t.Name + " — it may have been moved or renamed"; App.Log("not found: " + t.Path); }
+            else if (FileX.Exists(t.Path) && AudioKind.Detect(t.Path) == null && new System.IO.FileInfo(FileX.Long(t.Path)).Length < 1024) { why = t.Name + " is empty or not fully downloaded"; App.Log("too small: " + t.Path); }
+            else if (!FileX.Exists(t.Path) && !lib.Relocate(t)) { why = "Can't find " + t.Name + " — it may have been moved or renamed"; App.Log("not found: " + t.Path); }
             else if (!LoadWith(t, play)) why = "Windows couldn't play " + t.Name;
             if (why != null)
             {
@@ -173,11 +174,25 @@ namespace Aura
         }
 
         // opens a song in the main engine, or the second one if the main one can't
+        string playPath;          // what the engines are given: the song, or a copy named for what it really is
+
         bool LoadWith(Track t, bool play)
         {
             if (audio != primary) { try { audio.Stop(); } catch { } audio = primary; }
             triedFallback = false;
-            if (primary.Load(t.Path)) { audio.Volume = volume; return true; }
+            playPath = t.Path;
+            var kind = AudioKind.Detect(t.Path);
+            if (!AudioKind.Matches(t.Path, kind))
+            {
+                // e.g. an M4A named .mp3: Windows would try to open it as an MP3 and fail
+                try
+                {
+                    playPath = AudioKind.PlayableCopy(t.Path, kind, t.Id);
+                    App.Log(t.Path + " is really " + AudioKind.Name(kind) + " — playing it as that");
+                }
+                catch (Exception e) { App.Log("couldn't make a playable copy of " + t.Path + ": " + e.Message); playPath = t.Path; }
+            }
+            if (primary.Load(playPath)) { audio.Volume = volume; return true; }
             return SwitchToFallback(t, false);
         }
 
@@ -189,7 +204,7 @@ namespace Aura
             if (fallback == null) return false;
             try { primary.Stop(); } catch { }
             App.Log("trying " + fallback.Name + " for " + t.Path);
-            if (!fallback.Load(t.Path)) return false;
+            if (!fallback.Load(playPath ?? t.Path)) return false;
             audio = fallback;
             audio.Volume = volume;
             if (play) audio.Play();
@@ -262,9 +277,12 @@ namespace Aura
             {
                 var t = Current;
                 string err = (audio as WmpAudio)?.LastError ?? "";
-                App.Log(audio.Name + " couldn't play " + t.Path + (err.Length > 0 ? ": " + err : ""));
+                var kind = AudioKind.Detect(t.Path);
+                App.Log(audio.Name + " couldn't play " + t.Path + (err.Length > 0 ? ": " + err : "") + "  [inside it's " + AudioKind.Name(kind) + "; starts " + AudioKind.Header(t.Path) + "]");
                 if (SwitchToFallback(t, true)) return;
-                Problem?.Invoke("Windows couldn't play " + t.Name + (err.Length > 0 ? " (" + err + ")" : ""));
+                string what = kind == ".webm" ? " — it's a WebM file inside, which Windows can't play without its free \"Web Media Extensions\" from the Microsoft Store"
+                            : kind == null ? " — the file doesn't look like music inside (it may be damaged or not fully downloaded)" : "";
+                Problem?.Invoke("Windows couldn't play " + t.Name + what + (err.Length > 0 && what.Length == 0 ? " (" + err + ")" : ""));
                 failsInRow++;
                 if (failsInRow < Math.Min(Order.Count, 25)) Advance(true); else { failsInRow = 0; StopAll(); }
                 return;
