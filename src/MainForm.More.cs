@@ -21,7 +21,7 @@ namespace Aura
         {
             InitListen();
             if (Prefs.AutoSyncAll) StartAutoSync();
-            Sound = new SoundStore(Lib) { Background = Prefs.Listen };
+            Sound = new SoundStore(Lib) { Background = Prefs.Listen, NeedLoudness = Prefs.Leveling };
             Sound.Ready += id =>
             {
                 if (Page is NowPlayingPage np) np.SoundReady(id);

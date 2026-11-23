@@ -52,6 +52,7 @@ namespace Aura
             else if (script == "organize") OrganizeScript();
             else if (script == "sound") SoundScript();
             else if (script == "more") MoreScript();
+            else if (script == "idle") IdleScript();
             int i = 0; DateTime started = DateTime.Now; bool begun = false;
             var t = new Timer { Interval = 150 };
             t.Tick += (s, e) =>
@@ -924,6 +925,34 @@ namespace Aura
             Step("settings", () => { F.Go(new Route("settings")); return true; });
             Step("settings shot", () => { if (!Pause(6)) return false; if (F.Page is Canvas c) c.ScrollTo(1000, false); return true; });
             Step("settings shot 2", () => { if (!Pause(4)) return false; Shot("46_settings_listening"); return true; });
+        }
+
+        // how much processor and memory AURA uses while it sits there playing (Now Playing, full screen, a list)
+        static void IdleScript()
+        {
+            var proc = System.Diagnostics.Process.GetCurrentProcess();
+            TimeSpan cpu0 = TimeSpan.Zero; DateTime t0 = DateTime.Now;
+            void Report(string where)
+            {
+                proc.Refresh();
+                var cpu = proc.TotalProcessorTime; var now = DateTime.Now;
+                double pct = cpu0 == TimeSpan.Zero ? 0 : (cpu - cpu0).TotalSeconds / (now - t0).TotalSeconds * 100;
+                cpu0 = cpu; t0 = now;
+                Console.WriteLine("  " + where.PadRight(14) + " cpu " + pct.ToString("0") + "% (of one core)  memory " + (proc.WorkingSet64 / 1e6).ToString("0") + " MB  managed " + (GC.GetTotalMemory(false) / 1e6).ToString("0") + " MB  heard " + F.Sound.Done + "/" + L.Tracks.Count + "  threads " + proc.Threads.Count);
+            }
+            Step("scan", () => !L.Scan.Running && L.Tracks.Count >= 100 && Pause(4));
+            Step("play", () =>
+            {
+                if (Environment.GetEnvironmentVariable("IDLE_NOLISTEN") != null) F.Sound.Background = false;
+                P.PlayList(L.Tracks.Select(t => t.Id).ToList()); F.Go(new Route("songs")); Report("start"); return true;
+            });
+            for (int i = 0; i < 6; i++) Step("songs " + i, () => { if (!Pause(25)) return false; Report("songs page"); return true; });
+            Step("now", () => { F.Go(new Route("now")); return true; });
+            for (int i = 0; i < 6; i++) Step("now " + i, () => { if (!Pause(25)) return false; Report("now playing"); return true; });
+            Step("full", () => { F.FullScreenLyrics(); return true; });
+            for (int i = 0; i < 6; i++) Step("full " + i, () => { if (!Pause(25)) return false; Report("full screen"); return true; });
+            Step("full off", () => { F.FullScreenLyrics(); F.WindowState = FormWindowState.Minimized; return true; });
+            for (int i = 0; i < 4; i++) Step("min " + i, () => { if (!Pause(25)) return false; Report("minimized"); return true; });
         }
 
         // ratings, eras, search, undo, bookmarks, sleep, crossfade, radio, speed, trackers, folders, versions, looks

@@ -171,17 +171,3 @@ Not here yet: an equalizer.
 | Delete | remove from a playlist or Up next |
 
 The single-letter keys work when you're not typing in a box.
-
-
-    git tag v0.1.0
-    git push origin v0.1.0
-
-GitHub builds it on Windows and puts `AURA-Native-Setup.exe` and
-`AURA-Native-portable.zip` on the release page.
-
-To build it yourself on Windows, install the .NET SDK and run
-`dotnet build AuraNative.csproj -c Release`; the app ends up in `bin\Release`.
-The speech part (`aura_whisper.dll`) is built from `native/` with CMake and
-whisper.cpp v1.7.6 — see the release workflow for the exact commands. The
-vocal part (`onnx\onnxruntime.dll`) is onnxruntime 1.20.1's CPU build, taken
-from its official Python package by the release workflow.

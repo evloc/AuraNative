@@ -14,7 +14,7 @@ namespace Aura
         readonly Timer tick = new Timer { Interval = 250 };      // while paused: now and then is enough
         readonly FrameClock frames;                               // while playing: every screen refresh
         Bitmap backdrop; long backdropFor = -1; Size backdropSize;
-        RectangleF lyricsArea;
+        RectangleF lyricsArea, waveStrip;
         Track shown;
 
         public NowPlayingPage(IShell shell)
@@ -26,7 +26,9 @@ namespace Aura
                 minimized = FindForm()?.WindowState == FormWindowState.Minimized;
                 // with the graphics-card lyrics, the page itself only needs the waveform moving now and then
                 tick.Interval = UsingHost && shell.Player.IsPlaying ? 120 : 250;
-                if (!shell.Player.IsPlaying || UsingHost) Invalidate();
+                // with the graphics-card lyrics only the waveform strip moves: repaint just that, not the whole page
+                if (UsingHost && shell.Player.IsPlaying && waveStrip.Height > 0) Invalidate(Rectangle.Round(waveStrip));
+                else if (!shell.Player.IsPlaying || UsingHost) Invalidate();
             };
             tick.Start();
             frames = new FrameClock(this, () => Visible && shell.Player.IsPlaying && FullLyricsForm.Open == 0 && !Minimized && !UsingHost);
@@ -138,6 +140,7 @@ namespace Aura
             }
             DrawBackdrop(g, t);
             float strip = Theme.F(104);
+            waveStrip = new RectangleF(0, Height - strip - Theme.F(30), Width, strip + Theme.F(30));
             DrawWave(g, t, new RectangleF(Theme.F(44), Height - strip + Theme.F(14), Width - Theme.F(88), strip - Theme.F(30)));
             float H = Height - strip;
             bool wide = Width >= Theme.F(860);

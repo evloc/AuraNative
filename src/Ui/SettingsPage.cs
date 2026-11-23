@@ -156,7 +156,7 @@ namespace Aura
                 bpx = Pill(g, "bt:" + v, bpx, by, label, () => { shell.Prefs.Between = v; shell.Player.Between = v; shell.Prefs.Save(); Invalidate(); }, shell.Prefs.Between == v, null, 32).Right + Theme.F(8);
             }
             by += Theme.F(48);
-            Toggle(g, "lvl", x, by, cw - Theme.F(44), "Even out loudness — loud songs are turned down to match the rest (uses what AURA heard while listening)", shell.Prefs.Leveling, () => { shell.Prefs.Leveling = !shell.Prefs.Leveling; shell.Player.Leveling = shell.Prefs.Leveling; shell.Prefs.Save(); Invalidate(); });
+            Toggle(g, "lvl", x, by, cw - Theme.F(44), "Even out loudness — loud songs are turned down to match the rest (uses what AURA heard while listening)", shell.Prefs.Leveling, () => { shell.Prefs.Leveling = !shell.Prefs.Leveling; shell.Player.Leveling = shell.Prefs.Leveling; shell.Sound.NeedLoudness = shell.Prefs.Leveling; shell.Prefs.Save(); Invalidate(); });
             by += Theme.F(42);
             Toggle(g, "rad", x, by, cw - Theme.F(44), "Radio — when Up next runs out, keep going with songs like the last one", shell.Prefs.Radio, () => { shell.Prefs.Radio = !shell.Prefs.Radio; shell.Player.Radio = shell.Prefs.Radio; shell.Prefs.Save(); Invalidate(); });
             by += Theme.F(42);

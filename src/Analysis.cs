@@ -443,6 +443,10 @@ namespace Aura
         Thread worker;
         volatile bool stop;
         public bool Background = true;
+        bool needLoud;
+        // "even out loudness" needs each song's loudness, which songs heard before version 2 don't have
+        public bool NeedLoudness { get => needLoud; set { if (needLoud == value) return; needLoud = value; Reload(); Kick(); } }
+        public volatile bool Paused;             // full screen is up: wait, so it stays smooth
         public event Action<long> Ready;      // on the UI thread
         public int Total => lib.Tracks.Count;
         public int Done { get { lock (gate) return lib.Tracks.Count(t => done.Contains(t.Id)); } }
@@ -469,7 +473,9 @@ namespace Aura
             foreach (var r in lib.Db.Rows("SELECT track_id,size,mtime,version FROM sound"))
             {
                 if (!by.TryGetValue(Conv.L(r[0]), out var t)) continue;
-                if (Conv.L(r[1]) == t.Size && Math.Abs(Conv.D(r[2]) - t.Mtime) < 2 && Conv.L(r[3]) == SongSound.Version) d.Add(t.Id);
+                // songs heard by the older version (no loudness yet) only need hearing again when "even out loudness" is on
+                long v = Conv.L(r[3]);
+                if (Conv.L(r[1]) == t.Size && Math.Abs(Conv.D(r[2]) - t.Mtime) < 2 && (v == SongSound.Version || (v == 1 && !NeedLoudness))) d.Add(t.Id);
             }
             lock (gate) { done.Clear(); done.UnionWith(d); }
         }
@@ -543,11 +549,13 @@ namespace Aura
         }
 
         readonly HashSet<long> failedRecently = new HashSet<long>();
+        int heardSinceCompact;
 
         void Run()
         {
             while (!stop)
             {
+                if (Paused) { lock (gate) { Monitor.Wait(gate, 2000); } continue; }
                 Track t;
                 try { t = Next(); } catch { t = null; }
                 if (t == null)
@@ -572,9 +580,26 @@ namespace Aura
                 Current = "";
                 var id = t.Id;
                 if (ui != null) ui.Post(_ => Ready?.Invoke(id), null);
-                // stay gentle: rest about as long as the work took
-                int rest = (int)Math.Min(3000, Math.Max(150, sw.ElapsedMilliseconds));
-                lock (gate) { if (urgent.Count == 0 && !stop) Monitor.Wait(gate, rest); }
+                // the big sample arrays of each song would otherwise pile up in memory over a whole library
+                if (++heardSinceCompact >= 20)
+                {
+                    heardSinceCompact = 0;
+                    System.Runtime.GCSettings.LargeObjectHeapCompactionMode = System.Runtime.GCLargeObjectHeapCompactionMode.CompactOnce;
+                    GC.Collect();
+                }
+                // stay gentle: rest twice as long as the work took
+                int rest = (int)Math.Min(6000, Math.Max(300, sw.ElapsedMilliseconds * 2));
+                // (a nudge only cuts the rest short when a song is wanted right away)
+                var until = DateTime.Now.AddMilliseconds(rest);
+                lock (gate)
+                {
+                    while (urgent.Count == 0 && !stop)
+                    {
+                        int left = (int)(until - DateTime.Now).TotalMilliseconds;
+                        if (left <= 0) break;
+                        Monitor.Wait(gate, left);
+                    }
+                }
             }
         }
 
@@ -584,7 +609,7 @@ namespace Aura
             if (s != null) { pb = new byte[s.Print.Length * 4]; Buffer.BlockCopy(s.Print, 0, pb, 0, pb.Length); }
             lib.Db.Exec("INSERT OR REPLACE INTO sound (track_id,size,mtime,version,length,bpm,key,peaks,env,print,err,ts,loud) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 t.Id, t.Size, t.Mtime, SongSound.Version, s?.Length ?? 0, s?.Bpm ?? 0, s?.Key ?? "", s?.Peaks, s?.Env, pb, err ?? "", Library.Now, s == null || double.IsNaN(s.Loud) ? (object)null : s.Loud);
-            lock (gate) { done.Add(t.Id); if (s != null) { cache[t.Id] = s; } else cache.Remove(t.Id); }
+            lock (gate) { done.Add(t.Id); cache.Remove(t.Id); }
         }
 
         // what's known for each song, for lists (bpm, key)

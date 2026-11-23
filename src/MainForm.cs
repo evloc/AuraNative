@@ -360,13 +360,14 @@ namespace Aura
             if (closeStage != null) { var c = closeStage; closeStage = null; c(); return; }
             if (Aura.Wpf.WpfUi.Available)
             {
-                closeStage = Aura.Wpf.WpfUi.OpenStage(this, this, Screen.FromControl(this), () => { closeStage = null; Activate(); });
-                if (closeStage != null) return;
+                closeStage = Aura.Wpf.WpfUi.OpenStage(this, this, Screen.FromControl(this), () => { closeStage = null; Sound.Paused = false; Activate(); });
+                if (closeStage != null) { Sound.Paused = true; return; }
             }
 #endif
             if (full != null && !full.IsDisposed) { full.Close(); return; }
             full = new FullLyricsForm(this, Screen.FromControl(this));
-            full.FormClosed += (s, e) => { full = null; Activate(); };
+            full.FormClosed += (s, e) => { full = null; Sound.Paused = false; Activate(); };
+            Sound.Paused = true;      // background listening waits while full screen is up, so it stays smooth
             full.Show(this);
         }
 
