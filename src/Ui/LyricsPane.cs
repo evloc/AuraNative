@@ -16,11 +16,12 @@ namespace Aura
     sealed class LyricsPane : IDisposable
     {
         public bool Stage;
+        public bool LeftAlign;            // full screen, beside the cover: lines start at the left
         public double Duration;            // for plain lyrics on the stage: they scroll along with the song
         public Color Glow = Color.White;   // the current line's glow (stage)
         Lyrics lyr; long forId = -1;
         float scroll = float.NaN, manual; DateTime manualUntil = DateTime.MinValue;
-        float layoutW = -1; bool layoutStage;
+        float layoutW = -1; bool layoutStage, layoutLeft;
         List<Line> lay = new List<Line>();
         float total, rowH;
         readonly Stopwatch clock = Stopwatch.StartNew();
@@ -53,7 +54,7 @@ namespace Aura
 
         public void Dispose() => Free();
 
-        Font F => Stage ? Theme.Font(46, FontStyle.Bold) : Theme.Font(27, FontStyle.Bold);
+        Font F => Stage ? Theme.Font(LeftAlign ? 40 : 46, FontStyle.Bold) : Theme.Font(27, FontStyle.Bold);
         bool Timed => lyr != null && lyr.Timed;
         float Pad => Theme.F(Stage ? 26 : 10);
 
@@ -93,12 +94,12 @@ namespace Aura
                     L.Height = L.Rows.Count * rowH;
                 }
                 L.Width = L.Rows.Count == 0 ? 0 : L.Rows.Max(r => r.Width);
-                foreach (var r in L.Rows) r.Left = Stage ? (L.Width - r.Width) / 2 : 0;
+                foreach (var r in L.Rows) r.Left = Stage && !LeftAlign ? (L.Width - r.Width) / 2 : 0;
                 lay.Add(L);
                 y += L.Height + gap;
             }
             total = y;
-            layoutW = width; layoutStage = Stage;
+            layoutW = width; layoutStage = Stage; layoutLeft = LeftAlign;
         }
 
         // the line drawn once, white on transparent
@@ -183,7 +184,7 @@ namespace Aura
             double now = clock.Elapsed.TotalSeconds;
             float dt = (float)Math.Max(0.001, Math.Min(0.1, now - last));
             last = now;
-            if (layoutW < 0 || Math.Abs(layoutW - area.Width) > 0.5f || layoutStage != Stage) Layout(g, area.Width);
+            if (layoutW < 0 || Math.Abs(layoutW - area.Width) > 0.5f || layoutStage != Stage || layoutLeft != LeftAlign) Layout(g, area.Width);
             int cur = Current(pos);
             bool jumped = lastCur >= 0 && cur >= 0 && Math.Abs(cur - lastCur) > 3;       // a seek: get there quickly
             lastCur = cur;
@@ -227,9 +228,9 @@ namespace Aura
                 {
                     var sp = SpriteOf(L);
                     float scale = 1 + L.Lit * (Stage ? 0.06f : 0.035f);
-                    float x0 = Stage ? area.X + (area.Width - L.Width) / 2 : area.X;
+                    float x0 = Stage && !LeftAlign ? area.X + (area.Width - L.Width) / 2 : area.X;
                     // grow around the line's middle (stage) or its left edge (Now Playing)
-                    float ox = Stage ? x0 + L.Width / 2 : x0, oy = top + L.Height / 2;
+                    float ox = Stage && !LeftAlign ? x0 + L.Width / 2 : x0, oy = top + L.Height / 2;
                     RectangleF Dest(float sx, float sy, float sw, float sh) =>
                         new RectangleF(ox + (x0 - pad + sx - ox) * scale, oy + (top - pad + sy - oy) * scale, sw * scale, sh * scale);
                     var whole = new RectangleF(0, 0, sp.Width, sp.Height);

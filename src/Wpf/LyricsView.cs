@@ -18,13 +18,14 @@ namespace Aura.Wpf
     sealed class LyricsView : System.Windows.Controls.Canvas
     {
         public bool Stage;
+        public bool LeftAlign;            // full screen, beside the cover: lines start at the left
         public double Duration;
         public Action<double> Seek;
         public Color Glow = Colors.White;
         public double Fade = 1;
 
         Lyrics lyr; long forId = -1;
-        double builtWidth = -1; bool builtStage;
+        double builtWidth = -1; bool builtStage, builtLeft;
         readonly System.Windows.Controls.Canvas content = new System.Windows.Controls.Canvas();
         readonly TranslateTransform scrollT = new TranslateTransform();
         readonly List<Line> lines = new List<Line>();
@@ -80,7 +81,7 @@ namespace Aura.Wpf
         }
 
         bool Timed => lyr != null && lyr.Timed;
-        double FontPx => Stage ? 46 : 27;
+        double FontPx => Stage ? (LeftAlign ? 40 : 46) : 27;
 
         static FontFamily family;
         static FontFamily Family => family ?? (family = new FontFamily(Theme.Family));
@@ -88,7 +89,7 @@ namespace Aura.Wpf
         void Build(double width)
         {
             content.Children.Clear(); lines.Clear();
-            builtWidth = width; builtStage = Stage;
+            builtWidth = width; builtStage = Stage; builtLeft = LeftAlign;
             if (lyr == null || width < 20) return;
             var tf = new Typeface(Family, FontStyles.Normal, FontWeights.Bold, FontStretches.Normal);
             double dip = 1;
@@ -131,13 +132,13 @@ namespace Aura.Wpf
                 }
                 L.Width = L.Rows.Count == 0 ? 0 : L.Rows.Max(r => r.Width);
                 L.Box = new System.Windows.Controls.Canvas { Width = Math.Max(1, L.Width), Height = Math.Max(1, L.Height), Background = Brushes.Transparent };
-                L.Scale = new ScaleTransform(1, 1, Stage ? L.Width / 2 : 0, L.Height / 2);
+                L.Scale = new ScaleTransform(1, 1, Stage && !LeftAlign ? L.Width / 2 : 0, L.Height / 2);
                 L.Box.RenderTransform = L.Scale;
-                System.Windows.Controls.Canvas.SetLeft(L.Box, Stage ? (width - L.Width) / 2 : 0);
+                System.Windows.Controls.Canvas.SetLeft(L.Box, Stage && !LeftAlign ? (width - L.Width) / 2 : 0);
                 System.Windows.Controls.Canvas.SetTop(L.Box, L.Top);
                 foreach (var r in L.Rows)
                 {
-                    r.Left = Stage ? (L.Width - r.Width) / 2 : 0;
+                    r.Left = Stage && !LeftAlign ? (L.Width - r.Width) / 2 : 0;
                     System.Windows.Controls.Canvas.SetLeft(r.Tb, r.Left); System.Windows.Controls.Canvas.SetTop(r.Tb, r.Y);
                     L.Box.Children.Add(r.Tb);
                 }
@@ -183,7 +184,7 @@ namespace Aura.Wpf
             if (lyr == null) return;
             double w = ActualWidth, h = ActualHeight;
             if (w < 20 || h < 20) return;
-            if (builtWidth < 0 || Math.Abs(builtWidth - w) > 0.5 || builtStage != Stage) { Build(w); SetMask(); }
+            if (builtWidth < 0 || Math.Abs(builtWidth - w) > 0.5 || builtStage != Stage || builtLeft != LeftAlign) { Build(w); SetMask(); }
             int cur = Current(pos);
             bool jumped = lastCur >= 0 && cur >= 0 && Math.Abs(cur - lastCur) > 3;
             lastCur = cur;

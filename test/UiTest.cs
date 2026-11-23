@@ -327,12 +327,25 @@ namespace Aura
             });
             Step("click a line seeks", () => { P.Seek(8.4); return true; });
             Step("later line shot", () => { if (!Pause(12)) return false; Shot("21_now_later"); return true; });
-            Step("full screen", () => { F.FullScreenLyrics(); P.Seek(4.6); return true; });
+            Step("full screen", () =>
+            {
+                // a queue, so "up next" has something in it
+                var ids = new List<long> { T("Robbery").Id }; ids.AddRange(L.Tracks.Where(x => x != T("Robbery")).Select(x => x.Id));
+                P.PlayList(ids);
+                F.FullScreenLyrics(); P.Seek(4.6); return true;
+            });
             Step("full screen shot", () =>
             {
                 if (!Pause(14)) return false;
                 var full = Application.OpenForms.OfType<FullLyricsForm>().FirstOrDefault();
                 Ok(full != null && full.Visible, "full-screen lyrics opens");
+                if (full != null) { full.Controls.OfType<StageView>().First().Poke(); }
+                return true;
+            });
+            Step("full screen bar", () =>
+            {
+                if (!Pause(4)) return false;
+                var full = Application.OpenForms.OfType<FullLyricsForm>().FirstOrDefault();
                 if (full != null) ShotForm(full, "22_fullscreen");
                 Console.WriteLine("  full screen: " + StageView.Drawn + " frames, " + StageView.DrawMs.ToString("0.0") + " ms each");
                 return true;
@@ -1124,6 +1137,19 @@ namespace Aura
                 var key = Library.VersionKey(N("a.mp3"));
                 L.MarkNotVersions(key);
                 Ok(L.VersionsOf(N("a.mp3")).Count == 1 && !L.VersionGroups().Any(g => g.Contains(N("a.mp3"))), "\"not versions\" splits them up for good");
+                return true;
+            });
+            // ---- Discord status (the message only: there's no Discord app here)
+            Step("discord", () =>
+            {
+                var t = N("a.mp3");
+                var a = Discord.TestActivity(t, "https://example.com/c.jpg");
+                Console.WriteLine("  " + a);
+                Ok(a.Contains("\"type\":2") && a.Contains("\"details\":\"Lucid Dreams\"") && a.Contains("\"state\":\"by Juice WRLD\"") && a.Contains("\"large_image\":\"https://example.com/c.jpg\"") && a.Contains("\"end\":1700000040104"),
+                    "the Discord status says Listening to the song, by the artist, with its cover and a time bar");
+                var c = Discord.TestCover(N("b.wav"));
+                Ok(c != null && c.EndsWith("512x512bb.jpg"), "the cover's web link is looked up on Apple Music (" + c + ")");
+                Ok(Discord.TestCover(t) == "", "but not taken from a different artist's song");
                 return true;
             });
             // ---- settings and looks

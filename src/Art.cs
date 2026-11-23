@@ -100,6 +100,30 @@ namespace Aura
 
         static readonly string[] FolderNames = { "cover.jpg", "cover.png", "folder.jpg", "folder.png", "front.jpg", "front.png", "album.jpg", "album.png" };
 
+        // the cover at a bigger size (full-screen lyrics), read straight from the song. Slow: call it off the UI thread.
+        public static Bitmap LoadBig(Track t, int size)
+        {
+            try
+            {
+                byte[] data = null;
+                if (t.HasArt) data = Tags.Read(t.Path, true).Picture;
+                if (data == null)
+                {
+                    var folder = Path.GetDirectoryName(t.Path);
+                    foreach (var n in FolderNames)
+                    {
+                        var f = Path.Combine(folder ?? "", n);
+                        if (FileX.Exists(f)) { data = File.ReadAllBytes(FileX.Long(f)); break; }
+                    }
+                }
+                if (data == null || data.Length == 0) return null;
+                using (var ms = new MemoryStream(data))
+                using (var img = Image.FromStream(ms))
+                    return Square(img, Math.Min(size, Math.Max(img.Width, img.Height)));
+            }
+            catch (Exception e) { App.Log("big cover " + t.Path + ": " + e.Message); return null; }
+        }
+
         static Bitmap Load(long id, string path, double mtime, bool hasArt)
         {
             var file = FileFor(id, mtime);
