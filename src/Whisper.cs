@@ -126,7 +126,7 @@ namespace Aura
         public sealed class Heard { public string Word; public double Start, End; public double P; }
 
         // what was sung, word by word
-        public static List<Heard> Listen(string modelFile, int dtw, float[] pcm16k, string lang, string prompt, int beam, Action<double> progress, Func<bool> cancelled, out string detected)
+        public static List<Heard> Listen(string modelFile, int dtw, float[] pcm16k, string lang, string prompt, int beam, Action<double> progress, Func<bool> cancelled, out string detected, int maxThreads = 8)
         {
             detected = "";
             if (!Load()) throw new InvalidOperationException(LoadError);
@@ -137,7 +137,7 @@ namespace Aura
             {
                 ProgressFn pf = p => progress?.Invoke(p / 100.0);
                 StopFn sf = () => cancelled != null && cancelled() ? 1 : 0;
-                int threads = Math.Max(1, Math.Min(8, Environment.ProcessorCount - 1));
+                int threads = Math.Max(1, Math.Min(maxThreads, Environment.ProcessorCount - 1));
                 int rc = run(h, pcm16k, pcm16k.Length, Z(string.IsNullOrEmpty(lang) ? "auto" : lang), Z(prompt ?? ""), beam, threads, pf, sf);
                 GC.KeepAlive(pf); GC.KeepAlive(sf);
                 if (cancelled != null && cancelled()) throw new OperationCanceledException();

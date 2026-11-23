@@ -35,7 +35,7 @@ namespace Aura.Wpf
         sealed class Row { public TextBlock Tb; public double Y, Left, Width; public List<(double x, double w, int timed)> Words = new List<(double, double, int)>(); public LinearGradientBrush Fill; }
         sealed class Line
         {
-            public System.Windows.Controls.Canvas Box; public ScaleTransform Scale; public DropShadowEffect GlowFx;
+            public System.Windows.Controls.Canvas Box, Halo; public ScaleTransform Scale; public DropShadowEffect GlowFx, HaloFx;
             public List<Row> Rows = new List<Row>(); public double Top, Height, Width, T = -1, Lit; public LyricLine Src; public bool Hot; public bool Filling;
         }
 
@@ -134,8 +134,11 @@ namespace Aura.Wpf
                 L.Box = new System.Windows.Controls.Canvas { Width = Math.Max(1, L.Width), Height = Math.Max(1, L.Height), Background = Brushes.Transparent };
                 L.Scale = new ScaleTransform(1, 1, Stage && !LeftAlign ? L.Width / 2 : 0, L.Height / 2);
                 L.Box.RenderTransform = L.Scale;
-                System.Windows.Controls.Canvas.SetLeft(L.Box, Stage && !LeftAlign ? (width - L.Width) / 2 : 0);
-                System.Windows.Controls.Canvas.SetTop(L.Box, L.Top);
+                // the line sits in a "halo" holder: on the stage the lit line gets two glows, a tight bright one and a wide soft one
+                L.Halo = new System.Windows.Controls.Canvas { Width = Math.Max(1, L.Width), Height = Math.Max(1, L.Height) };
+                L.Halo.Children.Add(L.Box);
+                System.Windows.Controls.Canvas.SetLeft(L.Halo, Stage && !LeftAlign ? (width - L.Width) / 2 : 0);
+                System.Windows.Controls.Canvas.SetTop(L.Halo, L.Top);
                 foreach (var r in L.Rows)
                 {
                     r.Left = Stage && !LeftAlign ? (L.Width - r.Width) / 2 : 0;
@@ -150,7 +153,7 @@ namespace Aura.Wpf
                     L.Box.MouseLeave += (s, e) => LL.Hot = false;
                     L.Box.MouseLeftButtonUp += (s, e) => { if (LL.T >= 0) Seek?.Invoke(LL.T); e.Handled = true; };
                 }
-                content.Children.Add(L.Box);
+                content.Children.Add(L.Halo);
                 lines.Add(L);
                 y += L.Height + gap;
             }
@@ -204,22 +207,29 @@ namespace Aura.Wpf
                 L.Lit += (want - L.Lit) * Ease(dt, want > L.Lit ? 12 : 6);
                 double top = L.Top - scroll;
                 bool onScreen = top < h + rowH && top + L.Height > -rowH;
-                if (!onScreen) { if (L.Box.Visibility != Visibility.Hidden) L.Box.Visibility = Visibility.Hidden; continue; }
-                if (L.Box.Visibility != Visibility.Visible) L.Box.Visibility = Visibility.Visible;
-                double baseA = !Timed ? 0.88 : (cur < 0 || i > cur ? 0.36 : 0.52);
+                if (!onScreen) { if (L.Halo.Visibility != Visibility.Hidden) L.Halo.Visibility = Visibility.Hidden; continue; }
+                if (L.Halo.Visibility != Visibility.Visible) L.Halo.Visibility = Visibility.Visible;
+                double baseA = !Timed ? 0.88 : Stage ? (cur < 0 || i > cur ? 0.26 : 0.32) : (cur < 0 || i > cur ? 0.36 : 0.52);
                 if (Stage && Timed && cur >= 0) baseA *= Math.Max(0.22, 1 - Math.Abs(i - cur) * 0.14);
                 double a = baseA + (1 - baseA) * L.Lit;
                 if (L.Hot && i != cur) a = Math.Min(1, a + 0.3);
                 L.Box.Opacity = a * Fade;
-                double s = 1 + L.Lit * (Stage ? 0.06 : 0.035);
+                double s = 1 + L.Lit * (Stage ? 0.085 : 0.035);
                 L.Scale.ScaleX = s; L.Scale.ScaleY = s;
                 // the glow, only while it's (becoming or stopping being) the current line
                 if (L.Lit > 0.02)
                 {
-                    if (L.GlowFx == null) { L.GlowFx = new DropShadowEffect { ShadowDepth = 0, BlurRadius = Stage ? 38 : 22, Color = Glow }; L.Box.Effect = L.GlowFx; }
+                    if (L.GlowFx == null) { L.GlowFx = new DropShadowEffect { ShadowDepth = 0, BlurRadius = Stage ? 22 : 22, Color = Glow }; L.Box.Effect = L.GlowFx; }
+                    if (L.GlowFx.Color != Glow) L.GlowFx.Color = Glow;
                     L.GlowFx.Opacity = Math.Min(1, (Stage ? 1.0 : 0.7) * L.Lit * Fade);
+                    if (Stage)
+                    {
+                        if (L.HaloFx == null) { L.HaloFx = new DropShadowEffect { ShadowDepth = 0, BlurRadius = 64, Color = Glow }; L.Halo.Effect = L.HaloFx; }
+                        if (L.HaloFx.Color != Glow) L.HaloFx.Color = Glow;
+                        L.HaloFx.Opacity = Math.Min(1, 0.9 * L.Lit * Fade);
+                    }
                 }
-                else if (L.GlowFx != null) { L.Box.Effect = null; L.GlowFx = null; }
+                else if (L.GlowFx != null) { L.Box.Effect = null; L.GlowFx = null; L.Halo.Effect = null; L.HaloFx = null; }
                 // word by word: the sung part bright, the rest dim
                 bool byWord = Timed && i == cur && L.Src.Words != null;
                 if (byWord)
@@ -242,8 +252,8 @@ namespace Aura.Wpf
                             r.Fill = new LinearGradientBrush { MappingMode = BrushMappingMode.Absolute, StartPoint = new Point(0, 0), EndPoint = new Point(Math.Max(1, r.Width), 0) };
                             r.Fill.GradientStops.Add(new GradientStop(Colors.White, 0));
                             r.Fill.GradientStops.Add(new GradientStop(Colors.White, 0));
-                            r.Fill.GradientStops.Add(new GradientStop(Color.FromArgb(105, 255, 255, 255), 0));
-                            r.Fill.GradientStops.Add(new GradientStop(Color.FromArgb(105, 255, 255, 255), 1));
+                            r.Fill.GradientStops.Add(new GradientStop(Color.FromArgb((byte)(Stage ? 80 : 105), 255, 255, 255), 0));
+                            r.Fill.GradientStops.Add(new GradientStop(Color.FromArgb((byte)(Stage ? 80 : 105), 255, 255, 255), 1));
                             r.Tb.Foreground = r.Fill;
                         }
                         double kk = Math.Max(0, Math.Min(1, fill / Math.Max(1, r.Width)));

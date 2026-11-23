@@ -31,7 +31,12 @@ namespace Aura.Wpf
         readonly Ellipse glow = new Ellipse { IsHitTestVisible = false };
         readonly RadialGradientBrush glowBrush = new RadialGradientBrush();
         readonly Ellipse ring = new Ellipse { IsHitTestVisible = false, StrokeThickness = 1.6 };
-        readonly DropShadowEffect ringGlow = new DropShadowEffect { ShadowDepth = 0, BlurRadius = 26, Opacity = 0.9 };
+        readonly Ellipse ringHalo1 = new Ellipse { IsHitTestVisible = false, StrokeThickness = 8 }, ringHalo2 = new Ellipse { IsHitTestVisible = false, StrokeThickness = 20 };
+        readonly SolidColorBrush ringBrush = new SolidColorBrush(), halo1Brush = new SolidColorBrush(), halo2Brush = new SolidColorBrush();
+        readonly Rectangle coverShadow = new Rectangle { IsHitTestVisible = false };
+        readonly SolidColorBrush accentBrush = new SolidColorBrush(), dimBrush = new SolidColorBrush(Color.FromArgb(190, 255, 255, 255));
+        readonly LinearGradientBrush seekBrush = new LinearGradientBrush { StartPoint = new Point(0, 0), EndPoint = new Point(1, 0) };
+        double clipFor = -1;
         readonly Image cover = new Image { Stretch = Stretch.UniformToFill };
         readonly Border coverBox = new Border { ClipToBounds = true, IsHitTestVisible = false };
         readonly ScaleTransform coverScale = new ScaleTransform(1, 1);
@@ -62,7 +67,8 @@ namespace Aura.Wpf
         DateTime lastMove = DateTime.Now;
         Track shown;
         StageSong song, loading;
-        Color[] pal = { Colors.White, Colors.White, Colors.White };
+        readonly Color[] pal = Cosmos.SpacePal.Select(LyricsView.C).ToArray();       // deep space: the same colors for every song
+        static BitmapSource spaceSky;
         Point lastMouse;
         bool dragSeek, dragVol;
 
@@ -85,6 +91,8 @@ namespace Aura.Wpf
             // the sky: two layers so a new song's sky can fade in over the old one
             var tg = new TransformGroup(); tg.Children.Add(skyScale); tg.Children.Add(skyMove);
             foreach (var im in new[] { skyA, skyB }) { im.RenderTransformOrigin = new Point(0.5, 0.5); im.RenderTransform = tg; RenderOptions.SetBitmapScalingMode(im, BitmapScalingMode.HighQuality); root.Children.Add(im); }
+            if (spaceSky == null) using (var b = Cosmos.SpaceSky(1280, 720)) spaceSky = ToSource(b);
+            skyA.Source = spaceSky;
 
             scene.IsHitTestVisible = false;
             root.Children.Add(scene);
@@ -94,11 +102,16 @@ namespace Aura.Wpf
             glowBrush.GradientStops.Add(new GradientStop(Color.FromArgb(0, 255, 255, 255), 1));
             glow.Fill = glowBrush;
             root.Children.Add(glow);
-            ring.Effect = ringGlow;
-            root.Children.Add(ring);
+            ring.Stroke = ringBrush; ringHalo1.Stroke = halo1Brush; ringHalo2.Stroke = halo2Brush;
+            root.Children.Add(ringHalo2); root.Children.Add(ringHalo1); root.Children.Add(ring);
+            seekBrush.GradientStops.Add(new GradientStop(Colors.White, 0)); seekBrush.GradientStops.Add(new GradientStop(Colors.White, 1));
+            // a soft shadow under the cover (a drawn gradient: cheaper than an effect that would be redone every frame)
+            var shadow = new RadialGradientBrush(Color.FromArgb(150, 0, 0, 0), Color.FromArgb(0, 0, 0, 0)) { GradientOrigin = new Point(0.5, 0.45) };
+            shadow.Freeze();
+            coverShadow.Fill = shadow;
+            root.Children.Add(coverShadow);
 
             coverBox.Child = cover;
-            coverBox.Effect = new DropShadowEffect { ShadowDepth = 10, BlurRadius = 40, Opacity = 0.55, Color = Colors.Black };
             coverBox.RenderTransformOrigin = new Point(0.5, 0.5); coverBox.RenderTransform = coverScale;
             RenderOptions.SetBitmapScalingMode(cover, BitmapScalingMode.HighQuality);
             root.Children.Add(coverBox);
@@ -314,12 +327,7 @@ namespace Aura.Wpf
                 if (loading == s) loading = null;
                 if (!IsLoaded || shell.Player.Current != s.T) { s.Dispose(); return; }
                 var old = song; song = s; old?.Dispose();
-                pal = s.Pal.Select(LyricsView.C).ToArray();
                 cover.Source = ToSource(s.Cover) ?? Thumb(t);
-                var sky = ToSource(s.Sky);
-                // the new sky fades in over the old one
-                if (skyA.Source == null) { skyA.Source = sky; skyA.Opacity = 1; }
-                else { skyB.Source = sky; skyB.Opacity = 0; skyFade = 0; }
             }, a => Dispatcher.BeginInvoke(a));
         }
 
@@ -363,7 +371,7 @@ namespace Aura.Wpf
             if (t != null && cover.Source == null) cover.Source = Thumb(t);
             if (t != null && barCover.Source == null || barCover.Tag != (object)t) { var th = t == null ? null : Thumb(t); if (th != null || t == null) { barCover.Source = th; barCover.Tag = t; } }
 
-            cosmos.Step((float)dt, t == null ? -1 : Loudness(t, pos), P.IsPlaying);
+            cosmos.Step((float)dt, t == null ? -1 : Loudness(t, pos), P.IsPlaying, (float)W, (float)H);
             songFade += (1 - songFade) * Ease(dt, 3.5);
             intro.Opacity = Math.Max(0, intro.Opacity - dt * 1.6);
             if (intro.Opacity <= 0.01 && intro.Visibility == Visibility.Visible) intro.Visibility = Visibility.Collapsed;
@@ -374,6 +382,7 @@ namespace Aura.Wpf
 
             bool has = t != null && lyrics.Lyrics != null;
             side += ((has ? 1 : 0) - side) * Ease(dt, 4);
+            if (Math.Abs(side - (has ? 1 : 0)) < 0.002) side = has ? 1 : 0;      // settle exactly, so nothing keeps moving by tiny amounts
             var L0 = Cosmos.Place((float)W, (float)H, false); var L1 = Cosmos.Place((float)W, (float)H, true);
             double cx = L0.Cx + (L1.Cx - L0.Cx) * side, cy = L0.Cy + (L1.Cy - L0.Cy) * side, S = L0.S + (L1.S - L0.S) * side;
             var c0 = pal[0];
@@ -388,15 +397,15 @@ namespace Aura.Wpf
                 if (skyFade >= 1) { skyA.Source = skyB.Source; skyA.Opacity = 1; skyB.Opacity = 0; skyB.Source = null; }
             }
             flash.Width = W; flash.Height = H; intro.Width = W; intro.Height = H;
-            flash.Opacity = cosmos.Peak * cosmos.Peak * 0.45;
+            flash.Opacity = cosmos.Peak * cosmos.Peak * 0.35;
             if (flash.Opacity > 0.005) flashBrush.Color = LyricsView.C(Theme.Mix(DColor.FromArgb(c0.R, c0.G, c0.B), DColor.White, 0.6f));
 
             // streaks and dots
             Put(scene, new RectangleF(0, 0, W, H));
             scene.Update(cosmos, cx, cy, pal);
 
-            if (t == null) { foreach (var el in new UIElement[] { glow, ring, coverBox, date, clockText, title, artist, album, hint, lyrics, upNext, bar }) el.Visibility = Visibility.Hidden; return; }
-            foreach (var el in new UIElement[] { glow, ring, coverBox, title, artist, album, upNext, bar }) el.Visibility = Visibility.Visible;
+            if (t == null) { foreach (var el in new UIElement[] { glow, ring, ringHalo1, ringHalo2, coverShadow, coverBox, date, clockText, title, artist, album, hint, lyrics, upNext, bar }) el.Visibility = Visibility.Hidden; return; }
+            foreach (var el in new UIElement[] { glow, ring, ringHalo1, ringHalo2, coverShadow, coverBox, title, artist, album, upNext, bar }) el.Visibility = Visibility.Visible;
             date.Visibility = clockText.Visibility = Visibility.Collapsed;
 
             // glow, ring and cover
@@ -408,12 +417,24 @@ namespace Aura.Wpf
             glow.Opacity = Math.Min(1, 0.22 + cosmos.Energy * 0.3 + cosmos.Kick * 0.25 + cosmos.Peak * 0.3);
             double rs = S * 1.34 * (1 + cosmos.Kick * 0.04);
             Put(ring, new RectangleF(cx - rs / 2, cy - rs / 2, rs, rs));
+            Put(ringHalo1, new RectangleF(cx - rs / 2 - 3, cy - rs / 2 - 3, rs + 6, rs + 6));
+            Put(ringHalo2, new RectangleF(cx - rs / 2 - 9, cy - rs / 2 - 9, rs + 18, rs + 18));
             var rc = LyricsView.C(Theme.Mix(DColor.FromArgb(c0.R, c0.G, c0.B), DColor.White, 0.25f));
-            ring.Stroke = new SolidColorBrush(Color.FromArgb((byte)(150 + 80 * Math.Min(1, cosmos.Kick + cosmos.Energy * 0.4)), rc.R, rc.G, rc.B));
-            ringGlow.Color = rc; ringGlow.Opacity = 0.6 + cosmos.Energy * 0.4;
+            double ringA = Math.Min(1, cosmos.Kick + cosmos.Energy * 0.4);
+            ringBrush.Color = Color.FromArgb((byte)(150 + 80 * ringA), rc.R, rc.G, rc.B);
+            halo1Brush.Color = Color.FromArgb((byte)(30 + 40 * ringA), rc.R, rc.G, rc.B);
+            halo2Brush.Color = Color.FromArgb((byte)(10 + 22 * ringA), rc.R, rc.G, rc.B);
+            accentBrush.Color = rc;
+            Put(coverShadow, new RectangleF(cx - S * 0.75, cy - S * 0.68, S * 1.5, S * 1.6));
             Put(coverBox, new RectangleF(cx - S / 2, cy - S / 2, S, S));
-            coverBox.CornerRadius = new CornerRadius(S * 0.06);
-            coverBox.Background = cover.Source == null ? new SolidColorBrush(Color.FromArgb(60, c0.R, c0.G, c0.B)) : null;
+            if (Math.Abs(clipFor - S) > 0.5)
+            {
+                clipFor = S;
+                var clip = new RectangleGeometry(new Rect(0, 0, S, S), S * 0.06, S * 0.06); clip.Freeze();
+                coverBox.Clip = clip;
+            }
+            if (cover.Source == null) coverBox.Background = new SolidColorBrush(Color.FromArgb(60, c0.R, c0.G, c0.B));
+            else if (coverBox.Background != null) coverBox.Background = null;
             double pulse = 1 + cosmos.Energy * 0.02 + cosmos.Kick * 0.015;
             coverScale.ScaleX = coverScale.ScaleY = pulse;
 
@@ -430,7 +451,7 @@ namespace Aura.Wpf
             if (has)
             {
                 Put(lyrics, R(L1.Lyrics, L1.Lyrics, 0));
-                lyrics.Glow = LyricsView.C(Theme.Mix(DColor.FromArgb(c0.R, c0.G, c0.B), DColor.White, 0.35f));
+                lyrics.Glow = LyricsView.C(Theme.Mix(DColor.FromArgb(c0.R, c0.G, c0.B), DColor.White, 0.5f));
                 lyrics.Duration = P.Duration;
                 lyrics.Fade = songFade * side;
                 lyrics.Step(pos, dt);
@@ -451,19 +472,20 @@ namespace Aura.Wpf
             closeBtn.Opacity = ui; closeBtn.IsHitTestVisible = ui > 0.3;
             playGlyph.Text = P.IsPlaying ? "" : "";
             favGlyph.Text = t.Fav ? "" : "";
-            favGlyph.Foreground = t.Fav ? new SolidColorBrush(rc) : Brushes.White;
-            shuffleGlyph.Foreground = P.Shuffle ? new SolidColorBrush(rc) : new SolidColorBrush(Color.FromArgb(190, 255, 255, 255));
+            Brush want = t.Fav ? accentBrush : Brushes.White; if (favGlyph.Foreground != want) favGlyph.Foreground = want;
+            want = P.Shuffle ? accentBrush : dimBrush; if (shuffleGlyph.Foreground != want) shuffleGlyph.Foreground = want;
             repeatGlyph.Text = P.Repeat == 2 ? "" : "";
-            repeatGlyph.Foreground = P.Repeat > 0 ? new SolidColorBrush(rc) : new SolidColorBrush(Color.FromArgb(190, 255, 255, 255));
+            want = P.Repeat > 0 ? accentBrush : dimBrush; if (repeatGlyph.Foreground != want) repeatGlyph.Foreground = want;
             volGlyph.Text = P.Volume <= 0 ? "" : "";
             double d = P.Duration, k = d > 0 ? Math.Max(0, Math.Min(1, pos / d)) : 0;
             timeNow.Text = Theme.Time(pos); timeAll.Text = Theme.Time(d);
             double sw = seek.ActualWidth;
             seekFill.Width = Math.Max(0, sw * k); seekHead.Margin = new Thickness(sw * k - 5.5, 0, 0, 0);
-            seekFill.Fill = new LinearGradientBrush(Color.FromArgb(255, c0.R, c0.G, c0.B), rc, 0);
+            seekBrush.GradientStops[0].Color = Color.FromArgb(255, c0.R, c0.G, c0.B); seekBrush.GradientStops[1].Color = rc;
+            if (seekFill.Fill != seekBrush) seekFill.Fill = seekBrush;
             double vw = vol.ActualWidth, vk = P.Volume / 100.0;
             volFill.Width = Math.Max(0, vw * vk); volHead.Margin = new Thickness(vw * vk - 5.5, 0, 0, 0);
-            volFill.Fill = new SolidColorBrush(rc);
+            if (volFill.Fill != accentBrush) volFill.Fill = accentBrush;
         }
 
         // glass cards with what plays next, leaning back a little; click one to play it
@@ -517,28 +539,72 @@ namespace Aura.Wpf
         // ---------- light streaks and glowing dots, drawn each frame ----------
         sealed class Scene : FrameworkElement
         {
-            Cosmos c; double cx, cy; Color[] pal;
-            public void Update(Cosmos c, double cx, double cy, Color[] pal) { this.c = c; this.cx = cx; this.cy = cy; this.pal = pal; InvalidateVisual(); }
+            Cosmos c; double cx, cy;
+            // everything it draws with is made once and frozen (new brushes every frame made it heavy)
+            static readonly SolidColorBrush[,] dots = new SolidColorBrush[4, 17];
+            static readonly Pen[,] lines = new Pen[4, 17];
+            static Pen shotPen;
+            static Color Tint(int t) => t < 0 ? Color.FromRgb(235, 238, 255) : LyricsView.C(Theme.Mix(Cosmos.SpacePal[t], System.Drawing.Color.White, 0.45f));
+            static SolidColorBrush Dot(int tint, int a, double k = 1)
+            {
+                int i = tint + 1;
+                if (k != 1) { var b0 = new SolidColorBrush(Color.FromArgb((byte)(a / 16.0 * 255 * k), Tint(tint).R, Tint(tint).G, Tint(tint).B)); b0.Freeze(); return b0; }
+                var b = dots[i, a];
+                if (b == null) { var c = Tint(tint); b = new SolidColorBrush(Color.FromArgb((byte)(a / 16.0 * 255), c.R, c.G, c.B)); b.Freeze(); dots[i, a] = b; }
+                return b;
+            }
+            static readonly SolidColorBrush[,] halos = new SolidColorBrush[4, 17], halos2 = new SolidColorBrush[4, 17];
+            static SolidColorBrush Halo(SolidColorBrush[,] arr, int tint, int a, double k)
+            {
+                var b = arr[tint + 1, a];
+                if (b == null) { var c = Tint(tint); b = new SolidColorBrush(Color.FromArgb((byte)(a / 16.0 * 255 * k), c.R, c.G, c.B)); b.Freeze(); arr[tint + 1, a] = b; }
+                return b;
+            }
+            static Pen Line(int tint, int a)
+            {
+                var p = lines[tint + 1, a];
+                if (p == null) { p = new Pen(Halo(new SolidColorBrush[4, 17], tint, a, 0.35), 1); p.Freeze(); lines[tint + 1, a] = p; }
+                return p;
+            }
+
+            public void Update(Cosmos c, double cx, double cy, Color[] pal) { this.c = c; this.cx = cx; this.cy = cy; InvalidateVisual(); }
 
             protected override void OnRender(DrawingContext dc)
             {
                 if (c == null) return;
-                float W = (float)ActualWidth, H = (float)ActualHeight;
-                foreach (var s in c.Streaks)
+                bool warp = c.Peak > 0.05f;
+                foreach (var s in c.Stars)
                 {
-                    if (!c.Project(s, (float)cx, (float)cy, W, H, out var a, out var b, out var al, out var w)) continue;
-                    var pen = new Pen(new SolidColorBrush(Color.FromArgb((byte)(Math.Min(1, al) * 170), 238, 240, 255)), w) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round };
-                    dc.DrawLine(pen, new Point(a.X, a.Y), new Point(b.X, b.Y));
+                    c.Place(s, (float)cx, (float)cy, out var p, out var tail, out var r, out var al);
+                    int a = Math.Max(1, Math.Min(16, (int)Math.Round(al * 16)));
+                    if (warp)
+                    {
+                        var pen = new Pen(Dot(s.Tint, Math.Min(16, a + 3)), Math.Max(1, r)) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round };
+                        pen.Freeze();
+                        dc.DrawLine(pen, new Point(p.X, p.Y), new Point(tail.X, tail.Y));
+                        continue;
+                    }
+                    var pt = new Point(p.X, p.Y);
+                    if (s.Depth >= 1)
+                    {
+                        // the bright ones get a soft glow and a little sparkle
+                        dc.DrawEllipse(Halo(halos2, s.Tint, a, 0.055), null, pt, r * 3.2, r * 3.2);
+                        dc.DrawEllipse(Halo(halos, s.Tint, a, 0.12), null, pt, r * 2.1, r * 2.1);
+                        var lp = Line(s.Tint, a);
+                        dc.DrawLine(lp, new Point(p.X - r * 3, p.Y), new Point(p.X + r * 3, p.Y));
+                        dc.DrawLine(lp, new Point(p.X, p.Y - r * 3), new Point(p.X, p.Y + r * 3));
+                    }
+                    dc.DrawEllipse(Dot(s.Tint, a), null, pt, r, r);
                 }
-                foreach (var d in c.Dots)
+                foreach (var m in c.Shots)
                 {
-                    c.Place(d, (float)cx, (float)cy, W, H, out var p, out var r, out var al);
-                    if (al < 0.03f) continue;
-                    var col = pal[d.Color];
-                    var cc = Color.FromArgb(255, (byte)(col.R + (255 - col.R) / 4), (byte)(col.G + (255 - col.G) / 4), (byte)(col.B + (255 - col.B) / 4));
-                    var halo = new RadialGradientBrush(Color.FromArgb((byte)(al * 90), cc.R, cc.G, cc.B), Color.FromArgb(0, cc.R, cc.G, cc.B));
-                    dc.DrawEllipse(halo, null, new Point(p.X, p.Y), r * 3.2, r * 3.2);
-                    dc.DrawEllipse(new SolidColorBrush(Color.FromArgb((byte)(al * 235), cc.R, cc.G, cc.B)), null, new Point(p.X, p.Y), r, r);
+                    c.Place(m, out var head, out var tail, out var al);
+                    if (al < 0.02f) continue;
+                    var br = new LinearGradientBrush(Color.FromArgb(0, 255, 255, 255), Color.FromArgb((byte)(al * 230), 255, 255, 255), new Point(tail.X, tail.Y), new Point(head.X, head.Y)) { MappingMode = BrushMappingMode.Absolute };
+                    br.Freeze();
+                    var pen = new Pen(br, 2) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round }; pen.Freeze();
+                    dc.DrawLine(pen, new Point(tail.X, tail.Y), new Point(head.X, head.Y));
+                    dc.DrawEllipse(Dot(-1, Math.Max(1, (int)(al * 16))), null, new Point(head.X, head.Y), 2.6, 2.6);
                 }
             }
         }

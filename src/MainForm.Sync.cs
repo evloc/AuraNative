@@ -84,6 +84,11 @@ namespace Aura
         volatile bool autoSyncStop;
         public string AutoSyncStatus = "";
         public volatile bool TranscribeOpen;       // the Lyrics in time window is busy: wait
+#if WPF
+        static bool FullScreenOpen => FullLyricsForm.Open > 0 || Aura.Wpf.WpfUi.StageOpen;
+#else
+        static bool FullScreenOpen => FullLyricsForm.Open > 0;
+#endif
 
         public void AutoSyncChanged()
         {
@@ -107,7 +112,7 @@ namespace Aura
                         var m = Whisper.Models.FirstOrDefault(x => x.Name == Prefs.WhisperModel && x.Ready) ?? Whisper.Models.FirstOrDefault(x => x.Ready);
                         if (m == null) { Say("Waiting for a speech model — time one song by hand first (it downloads the model)."); Thread.Sleep(30000); continue; }
                         if (!Whisper.Load()) { Say("Not available: " + Whisper.LoadError + "."); return; }
-                        if (TranscribeOpen || (Player.IsPlaying && Environment.ProcessorCount < 4)) { Thread.Sleep(5000); continue; }
+                        if (TranscribeOpen || FullScreenOpen || (Player.IsPlaying && Environment.ProcessorCount < 4)) { Thread.Sleep(5000); continue; }
                         var tried = new HashSet<long>(Lib.Db.Rows("SELECT track_id FROM autosync_tried").Select(r => Conv.L(r[0])));
                         Track next = null; Lyrics lyr = null; int left = 0;
                         foreach (var t in Lib.Tracks.ToList())
@@ -126,7 +131,8 @@ namespace Aura
                             var lines = lyr.Plain.Split('\n').Select(x => x.Trim()).Where(x => x.Length > 0 && !(x.StartsWith("[") && x.EndsWith("]"))).ToList();
                             var pcm = Hearing.Pcm(next, Prefs.Separate == "always", (s, k) => { }, () => autoSyncStop, out _);
                             var prompt = string.Join(" ", lines); if (prompt.Length > 220) prompt = prompt.Substring(0, 220);
-                            var heard = Whisper.Listen(m.File, m.Dtw, pcm, "auto", prompt, 1, null, () => autoSyncStop, out _);
+                            // in the background: a few cores only, so the music and the screen stay smooth
+                            var heard = Whisper.Listen(m.File, m.Dtw, pcm, "auto", prompt, 1, null, () => autoSyncStop, out _, Math.Max(1, Environment.ProcessorCount / 4));
                             var r = Sync.Align(lines, heard);
                             if (r.Confidence >= 0.5 && r.Lines.Count(x => x.T >= 0) > 0)
                             {

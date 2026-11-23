@@ -140,7 +140,7 @@ namespace Aura
                 if (IsDisposed) { s.Dispose(); return; }
                 if (loading == s) loading = null;
                 if (shell.Player.Current != s.T) { s.Dispose(); return; }
-                song?.Dispose(); song = s; sky?.Dispose(); sky = null;
+                song?.Dispose(); song = s;
             }, this);
         }
 
@@ -163,43 +163,57 @@ namespace Aura
             bool showUi = (DateTime.Now - lastMove).TotalSeconds < 3;
             ui += ((showUi ? 1 : 0) - ui) * FrameClock.Ease(dt, showUi ? 10 : 3);
             if (!showUi && !cursorHidden && App.IsWindows && Form.ActiveForm == owner) { Cursor.Hide(); cursorHidden = true; }
-            cosmos.Step(dt, t == null ? -1 : Loudness(t, pos), P.IsPlaying);
+            cosmos.Step(dt, t == null ? -1 : Loudness(t, pos), P.IsPlaying, Width, Height);
             bool has = t != null && pane.Lyrics != null;
             side += ((has ? 1 : 0) - side) * FrameClock.Ease(dt, 4);
+            if (Math.Abs(side - (has ? 1 : 0)) < 0.002f) side = has ? 1 : 0;
             var L0 = Cosmos.Place(Width, Height, false); var L1 = Cosmos.Place(Width, Height, true);
             var L = Mix(L0, L1, side);
-            var pal = song?.Pal ?? new[] { Theme.Accent, Theme.Accent, Theme.Accent };
+            var pal = Cosmos.SpacePal;
 
-            // the sky
-            if (song != null)
+            // deep space: the same sky for every song
+            if (sky == null || skyFor != Size)
             {
-                if (sky == null || skyFor != Size)
-                {
-                    sky?.Dispose();
-                    sky = new Bitmap(Math.Max(1, Width), Math.Max(1, Height), System.Drawing.Imaging.PixelFormat.Format32bppPArgb);
-                    using (var sg = Graphics.FromImage(sky)) { sg.InterpolationMode = InterpolationMode.HighQualityBilinear; sg.PixelOffsetMode = PixelOffsetMode.Half; sg.DrawImage(song.Sky, new Rectangle(0, 0, Width, Height)); }
-                    skyFor = Size;
-                }
-                g.DrawImageUnscaled(sky, 0, 0);
+                sky?.Dispose();
+                sky = new Bitmap(Math.Max(1, Width), Math.Max(1, Height), System.Drawing.Imaging.PixelFormat.Format32bppPArgb);
+                using (var small = Cosmos.SpaceSky(Math.Max(64, Width / 2), Math.Max(36, Height / 2)))
+                using (var sg = Graphics.FromImage(sky)) { sg.InterpolationMode = InterpolationMode.HighQualityBilinear; sg.PixelOffsetMode = PixelOffsetMode.Half; sg.DrawImage(small, new Rectangle(0, 0, Width, Height)); }
+                skyFor = Size;
             }
-            else g.Clear(Color.FromArgb(8, 9, 14));
-            if (cosmos.Peak > 0.01f) using (var b = new SolidBrush(Color.FromArgb((int)(cosmos.Peak * 120), Theme.Mix(pal[0], Color.White, 0.5f)))) g.FillRectangle(b, 0, 0, Width, Height);
+            g.DrawImageUnscaled(sky, 0, 0);
+            if (cosmos.Peak > 0.01f) using (var b = new SolidBrush(Color.FromArgb((int)(cosmos.Peak * cosmos.Peak * 90), Theme.Mix(pal[0], Color.White, 0.5f)))) g.FillRectangle(b, 0, 0, Width, Height);
 
-            // streaks flying out of the cover, and glowing dots
+            // stars (a few tinted), and shooting stars
             g.SmoothingMode = SmoothingMode.AntiAlias;
-            foreach (var st in cosmos.Streaks)
+            foreach (var st in cosmos.Stars)
             {
-                if (!cosmos.Project(st, L.Cx, L.Cy, Width, Height, out var a, out var b2, out var al, out var w)) continue;
-                using (var pen = new Pen(Color.FromArgb((int)(Math.Min(1, al) * 170), 238, 240, 255), w) { StartCap = LineCap.Round, EndCap = LineCap.Round }) g.DrawLine(pen, a, b2);
+                cosmos.Place(st, L.Cx, L.Cy, out var p, out var tail, out var r, out var al);
+                var c = st.Tint < 0 ? Color.FromArgb(235, 238, 255) : Theme.Mix(pal[st.Tint], Color.White, 0.45f);
+                if (cosmos.Peak > 0.05f)
+                {
+                    using (var pen = new Pen(Color.FromArgb((int)(Math.Min(1, al + 0.2f) * 220), c), Math.Max(1, r)) { StartCap = LineCap.Round, EndCap = LineCap.Round }) g.DrawLine(pen, p, tail);
+                    continue;
+                }
+                if (st.Depth >= 1)
+                {
+                    // the bright ones get a soft glow and a little sparkle
+                    for (int k = 2; k >= 1; k--)
+                    {
+                        float halo = r * (1 + k * 1.1f);
+                        using (var b = new SolidBrush(Color.FromArgb((int)(al * (k == 2 ? 14 : 30)), c))) g.FillEllipse(b, p.X - halo, p.Y - halo, halo * 2, halo * 2);
+                    }
+                    using (var pen = new Pen(Color.FromArgb((int)(al * 90), c), 1)) { g.DrawLine(pen, p.X - r * 3, p.Y, p.X + r * 3, p.Y); g.DrawLine(pen, p.X, p.Y - r * 3, p.X, p.Y + r * 3); }
+                }
+                using (var b = new SolidBrush(Color.FromArgb((int)(al * 255), c))) g.FillEllipse(b, p.X - r, p.Y - r, r * 2, r * 2);
             }
-            foreach (var d in cosmos.Dots)
+            foreach (var m in cosmos.Shots)
             {
-                cosmos.Place(d, L.Cx, L.Cy, Width, Height, out var p, out var r, out var al);
-                if (al < 0.03f) continue;
-                var c = Theme.Mix(pal[d.Color], Color.White, 0.25f);
-                float halo = r * 2.4f;
-                using (var b = new SolidBrush(Color.FromArgb((int)(al * 34), c))) g.FillEllipse(b, p.X - halo, p.Y - halo, halo * 2, halo * 2);
-                using (var b = new SolidBrush(Color.FromArgb((int)(al * 235), c))) g.FillEllipse(b, p.X - r, p.Y - r, r * 2, r * 2);
+                cosmos.Place(m, out var head, out var tail, out var al);
+                if (al < 0.02f) continue;
+                using (var br = new LinearGradientBrush(tail, head, Color.FromArgb(0, 255, 255, 255), Color.FromArgb((int)(al * 230), 255, 255, 255)))
+                using (var pen = new Pen(br, Theme.F(2)) { StartCap = LineCap.Round, EndCap = LineCap.Round }) g.DrawLine(pen, tail, head);
+                float hr = Theme.F(2.6f);
+                using (var b = new SolidBrush(Color.FromArgb((int)(al * 255), 255, 255, 255))) g.FillEllipse(b, head.X - hr, head.Y - hr, hr * 2, hr * 2);
             }
 
             if (t == null)
@@ -214,18 +228,22 @@ namespace Aura
             float pulse = 1 + cosmos.Energy * 0.02f + cosmos.Kick * 0.015f;
             Glow(pal[0]);
             var gr = RectangleF.Inflate(L.Cover, L.S * 0.75f, L.S * 0.75f);
-            var gs = glowSprite.At(Math.Min(1, 0.35f + cosmos.Energy * 0.4f + cosmos.Kick * 0.3f));
+            var gs = glowSprite.At(Math.Min(1, 0.22f + cosmos.Energy * 0.35f + cosmos.Kick * 0.3f));
             if (gs != null) g.DrawImage(gs, gr);
             float rp = 1 + cosmos.Kick * 0.04f;
             var ring = RectangleF.Inflate(L.Ring, L.Ring.Width * (rp - 1) / 2, L.Ring.Height * (rp - 1) / 2);
             for (int i = 3; i >= 0; i--)
                 using (var pen = new Pen(Color.FromArgb(i == 0 ? 190 : 34 - i * 6, Theme.Mix(pal[0], Color.White, 0.25f)), i == 0 ? Theme.F(1.6f) : Theme.F(2 + i * 4)))
                     g.DrawEllipse(pen, ring);
-            var cr = RectangleF.Inflate(L.Cover, L.S * (pulse - 1) / 2, L.S * (pulse - 1) / 2);
+            var cr = L.Cover;
             for (int i = 1; i <= 3; i++)
                 using (var sh = new SolidBrush(Color.FromArgb(28, 0, 0, 0))) using (var sp = Theme.Round(RectangleF.Inflate(new RectangleF(cr.X, cr.Y + Theme.F(8), cr.Width, cr.Height), Theme.F(i * 4), Theme.F(i * 4)), L.S * 0.06f + Theme.F(i * 4))) g.FillPath(sh, sp);
             var img = cover ?? Art.Get(t);
+            // the cover is prepared once at its size and pulses by scaling (re-scaling the picture every frame is slow)
+            var cst = g.Save();
+            g.TranslateTransform(L.Cx, L.Cy); g.ScaleTransform(pulse, pulse); g.TranslateTransform(-L.Cx, -L.Cy);
             if (img != null) Theme.Image(g, img, cr, L.S * 0.06f); else Theme.NoArt(g, cr, L.S * 0.06f, t.Id);
+            g.Restore(cst);
 
             // the song
             Theme.Write(g, t.Name, Theme.Font(L.Title.Height * 0.62f / Theme.S, FontStyle.Bold), Color.FromArgb(ta, 255, 255, 255), L.Title, Theme.Center);
@@ -242,7 +260,7 @@ namespace Aura
             // the lyrics, beside the cover
             if (has)
             {
-                pane.Glow = Theme.Mix(pal[0], Color.White, 0.35f);
+                pane.Glow = Theme.Mix(pal[0], Color.White, 0.5f);
                 pane.Duration = P.Duration;
                 pane.Fade = songFade * side;
                 pane.Draw(g, L.Lyrics, pos, this, sec => { P.Seek(sec); Poke(); }, "st");
@@ -272,6 +290,13 @@ namespace Aura
                 Artist = R(a.Artist, b.Artist), Album = R(a.Album, b.Album), Lyrics = b.Lyrics, Bar = b.Bar, UpNext = R(a.UpNext, b.UpNext),
                 CardW = b.CardW, CardH = b.CardH, CardGap = b.CardGap,
             };
+        }
+
+        static readonly Pen[,] streakPens = new Pen[17, 9];
+        static Pen StreakPen(float alpha, float width)
+        {
+            int a = Math.Max(0, Math.Min(16, (int)Math.Round(alpha * 16))), w = Math.Max(0, Math.Min(8, (int)Math.Round((width - 0.8f) / 0.3f)));
+            return streakPens[a, w] ?? (streakPens[a, w] = new Pen(Color.FromArgb((int)(a / 16f * 170), 238, 240, 255), 0.8f + w * 0.3f) { StartCap = LineCap.Round, EndCap = LineCap.Round });
         }
 
         static string lightFamily;
@@ -458,10 +483,9 @@ namespace Aura
                 {
                     s.Cover = Art.LoadBig(t, coverPx) ?? copy;
                     if (s.Cover != copy) copy?.Dispose();
-                    s.Pal = Cosmos.Palette(s.Cover, accent);
-                    s.Sky = Cosmos.Backdrop(s.Cover, s.Pal, skyW, skyH);
+                    s.Pal = Cosmos.SpacePal;
                 }
-                catch (Exception e) { App.Log("full screen song: " + e.Message); s.Pal = s.Pal ?? Cosmos.Palette(null, accent); s.Sky = s.Sky ?? Cosmos.Backdrop(null, s.Pal, 64, 36); }
+                catch (Exception e) { App.Log("full screen song: " + e.Message); s.Pal = Cosmos.SpacePal; }
                 try { post(() => done(s)); } catch { }
             }) { IsBackground = true, Priority = System.Threading.ThreadPriority.BelowNormal, Name = "stage song" }.Start();
             return s;

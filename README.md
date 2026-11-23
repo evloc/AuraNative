@@ -63,13 +63,14 @@ installed side by side, and each keeps its own library:
 - **Now Playing and lyrics** — click the cover in the player bar (or the
   microphone, or Ctrl+L). Timed lyrics follow the song and light up word by
   word when the song has word timings; click a line to jump there.
-- **Full-screen lyrics** — the cover big in the middle with a ring that pulses
-  with the music, light streaks and glowing dots flying out of it, and the
-  whole sky made of the cover's colors. The lyrics sit on the right (the
-  current line glows and fills in word by word; click a line to jump there),
-  what plays next is on the left (click a card to play it), and a glass player
-  bar at the bottom slides away when the mouse rests. A new song brings a warp.
-  F11 or K to open; Esc to leave; Space, ←/→, N/P work there.
+- **Full-screen lyrics** — deep space: black, with twinkling stars, shooting
+  stars and soft splashes of violet, pink and blue (the same for every song).
+  The cover sits big in the middle with a ring that pulses with the music; the
+  lyrics are on the right (the current line glows and fills in word by word;
+  click a line to jump there), what plays next is on the left (click a card to
+  play it), and a glass player bar at the bottom slides away when the mouse
+  rests. A new song brings a short warp. F11 or K to open; Esc to leave; Space,
+  ←/→, N/P work there.
 - **Smooth** — the lyrics (in Now Playing and full screen) and the space scene
   are drawn by the graphics card (WPF, built into Windows), so they glide
   instead of stuttering. If that can't start, AURA falls back to its older

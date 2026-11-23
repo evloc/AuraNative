@@ -237,12 +237,18 @@ namespace Aura
             y += h + Theme.F(20);
 
             // ---- updates
-            h = Theme.F(150);
+            h = Theme.F(176);
             x = Card(g, y, h, "Updates", "AURA Native checks GitHub for a new version when it opens, and puts an Update button at the top when there is one.");
             float uy = y + Theme.F(96);
             float ub = Pill(g, "chk", x, uy, Updater.Checking ? "Checking…" : "Check now", () => Updater.Check(true), false, "refresh", 34).Right + Theme.F(10);
             if (Updater.Available && !Updater.Downloading) ub = Pill(g, "upd", ub, uy, "Update to " + Updater.Latest, () => (FindForm() as MainForm)?.InstallUpdate(), true, "download", 34).Right + Theme.F(10);
             Theme.Write(g, Updater.Status, Theme.Font(13), Theme.Faint, new RectangleF(ub + Theme.F(6), uy, cw - (ub - x) - Theme.F(50), Theme.F(34)));
+#if WPF
+            string drawing = Aura.Wpf.WpfUi.Available ? "Lyrics and full screen are drawn by the graphics card" + (Aura.Wpf.WpfUi.Why.Length > 0 ? " (" + Aura.Wpf.WpfUi.Why + ")" : ".") : "Lyrics and full screen use the older drawing" + (Aura.Wpf.WpfUi.Why.Length > 0 ? ": " + Aura.Wpf.WpfUi.Why : ".");
+#else
+            string drawing = "Lyrics and full screen use the older drawing.";
+#endif
+            Theme.Write(g, "Version " + App.Version + "  ·  " + drawing, Theme.Font(12.5f), Theme.Faint, new RectangleF(x, uy + Theme.F(42), cw - Theme.F(44), Theme.F(22)));
             y += h + Theme.F(20);
 
             // ---- from the first AURA

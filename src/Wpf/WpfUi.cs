@@ -25,14 +25,16 @@ namespace Aura.Wpf
                 {
                     var tier = RenderCapability.Tier >> 16;
                     App.Log("graphics card drawing (WPF): tier " + tier);
+                    if (tier < 2) Why = "Windows says this graphics card can only partly help (tier " + tier + ")";
                     ok = true;
                 }
-                catch (Exception e) { App.Log("WPF isn't available: " + e.Message); ok = false; }
+                catch (Exception e) { App.Log("WPF isn't available: " + e.Message); ok = false; Why = e.Message; }
                 return ok;
             }
         }
 
-        public static void Failed(Exception e) { App.Log("WPF failed, using the older drawing: " + e); ok = false; }
+        public static string Why = "";
+        public static void Failed(Exception e) { App.Log("WPF failed, using the older drawing: " + e); ok = false; Why = e.Message; }
 
         // full-screen lyrics; returns something that can be closed, or null if it couldn't open
         public static Action OpenStage(IShell shell, Form owner, Screen screen, Action closed)

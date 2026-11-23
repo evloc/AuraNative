@@ -214,7 +214,7 @@ namespace Aura
                 // how bright: the current line is white, sung lines a bit dimmer, lines to come dimmer still
                 float baseA;
                 if (!Timed) baseA = 0.88f;
-                else baseA = cur < 0 || i > cur ? 0.36f : 0.52f;
+                else baseA = Stage ? (cur < 0 || i > cur ? 0.26f : 0.32f) : (cur < 0 || i > cur ? 0.36f : 0.52f);
                 if (Stage && Timed && cur >= 0) baseA *= (float)Math.Max(0.22, 1 - Math.Abs(i - cur) * 0.14);
                 float a = baseA + (1 - baseA) * L.Lit;
                 float mid = top + L.Height / 2;
@@ -227,7 +227,7 @@ namespace Aura
                 if (a > 0.01f)
                 {
                     var sp = SpriteOf(L);
-                    float scale = 1 + L.Lit * (Stage ? 0.06f : 0.035f);
+                    float scale = 1 + L.Lit * (Stage ? 0.085f : 0.035f);
                     float x0 = Stage && !LeftAlign ? area.X + (area.Width - L.Width) / 2 : area.X;
                     // grow around the line's middle (stage) or its left edge (Now Playing)
                     float ox = Stage && !LeftAlign ? x0 + L.Width / 2 : x0, oy = top + L.Height / 2;
@@ -241,9 +241,9 @@ namespace Aura
                         var d = Dest(-gm, -gm, sp.Width + gm * 2, sp.Height + gm * 2);
                         // twice, a bit bigger the second time: a brighter core and a wide soft halo
                         float gs = Stage ? 1 : 0.5f;
-                        Blit(g, gl, 0.95f * gs * L.Lit * Fade, d, new RectangleF(0, 0, gl.Width, gl.Height));
+                        Blit(g, gl, Math.Min(1f, (Stage ? 1f : 0.95f) * gs * L.Lit * Fade), d, new RectangleF(0, 0, gl.Width, gl.Height));
                         var d2 = RectangleF.Inflate(d, d.Width * 0.04f, d.Height * 0.18f);
-                        if (Stage) Blit(g, gl, 0.5f * L.Lit * Fade, d2, new RectangleF(0, 0, gl.Width, gl.Height));
+                        if (Stage) Blit(g, gl, 0.85f * L.Lit * Fade, d2, new RectangleF(0, 0, gl.Width, gl.Height));
                     }
                     bool byWord = Timed && i == cur && L.Src.Words != null;
                     if (!byWord) Blit(g, sp, a, Dest(0, 0, sp.Width, sp.Height), whole);

@@ -156,41 +156,87 @@ namespace Aura
             }
         }
 
+        // ---------- deep space: the same for every song ----------
+        // violet, pink and blue splashes of nebula on black
+        public static readonly Color[] SpacePal = { Color.FromArgb(150, 100, 255), Color.FromArgb(255, 90, 175), Color.FromArgb(70, 170, 255) };
+
+        public static Bitmap SpaceSky(int w, int h)
+        {
+            var b = new Bitmap(w, h, PixelFormat.Format32bppPArgb);
+            using (var g = Graphics.FromImage(b))
+            {
+                g.Clear(Color.FromArgb(3, 3, 8));
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                var rnd = new Random(1977);
+                float m = Math.Max(w, h);
+                // big soft clouds, then smaller brighter knots inside them
+                (float x, float y, float r, int c, int a)[] clouds =
+                {
+                    (0.12f, 0.2f, 0.3f, 0, 30), (0.88f, 0.16f, 0.26f, 1, 26), (0.82f, 0.88f, 0.32f, 2, 28),
+                    (0.06f, 0.92f, 0.22f, 1, 18), (0.42f, 0.04f, 0.16f, 2, 16),
+                };
+                foreach (var cl in clouds)
+                {
+                    Blob(g, w * cl.x, h * cl.y, m * cl.r, Color.FromArgb(cl.a, SpacePal[cl.c]));
+                    for (int i = 0; i < 7; i++)
+                    {
+                        float ang = (float)(rnd.NextDouble() * Math.PI * 2), d = (float)rnd.NextDouble() * m * cl.r * 0.55f;
+                        Blob(g, w * cl.x + (float)Math.Cos(ang) * d, h * cl.y + (float)Math.Sin(ang) * d, m * cl.r * (0.18f + (float)rnd.NextDouble() * 0.25f),
+                            Color.FromArgb((int)(cl.a * 0.9f), Theme.Mix(SpacePal[cl.c], SpacePal[(cl.c + 1) % 3], (float)rnd.NextDouble() * 0.4f)));
+                    }
+                }
+                // a faint dust of tiny stars that never moves (the moving ones are drawn on top)
+                for (int i = 0; i < w * h / 2600; i++)
+                {
+                    float x = (float)rnd.NextDouble() * w, y = (float)rnd.NextDouble() * h, r = 0.4f + (float)rnd.NextDouble() * 0.7f;
+                    using (var br = new SolidBrush(Color.FromArgb(40 + rnd.Next(90), 220, 225, 255))) g.FillEllipse(br, x - r, y - r, r * 2, r * 2);
+                }
+                // darker toward the edges
+                using (var p = new GraphicsPath())
+                {
+                    p.AddEllipse(-w * 0.25f, -h * 0.3f, w * 1.5f, h * 1.6f);
+                    using (var pb = new PathGradientBrush(p) { CenterColor = Color.FromArgb(0, 0, 0, 0), SurroundColors = new[] { Color.FromArgb(220, 0, 0, 0) }, CenterPoint = new PointF(w * 0.5f, h * 0.45f) })
+                    {
+                        pb.Blend = new Blend { Factors = new[] { 0f, 0.6f, 1f, 1f }, Positions = new[] { 0f, 0.25f, 0.55f, 1f } };
+                        g.FillRectangle(pb, 0, 0, w, h);
+                    }
+                }
+            }
+            return b;
+        }
+
         // ---------- moving things ----------
         public float Energy, Kick, Peak;                   // eased loudness, a beat's punch, the warp between songs (0..1)
-        double warp, travel;
+        double warp, nextShot = 2;
         public double Time;
 
-        public sealed class Streak { public float X, Y, Z, Speed; }
-        public sealed class Dot { public float Angle, Dist, Size, Phase, Drift, Spin; public int Color; }
-        public readonly List<Streak> Streaks = new List<Streak>();
-        public readonly List<Dot> Dots = new List<Dot>();
+        public sealed class Star { public float X, Y, Size, Depth, Phase, Speed; public int Tint; }
+        public sealed class Shot { public float X, Y, Vx, Vy, Life, Age, Len; }
+        public readonly List<Star> Stars = new List<Star>();
+        public readonly List<Shot> Shots = new List<Shot>();
         readonly Random rnd = new Random(7);
+        float W = 1920, H = 1080;
 
         public Cosmos()
         {
-            for (int i = 0; i < 170; i++) Streaks.Add(NewStreak(true));
-            for (int i = 0; i < 46; i++)
-                Dots.Add(new Dot
-                {
-                    Angle = (float)(rnd.NextDouble() * Math.PI * 2), Dist = 0.16f + (float)rnd.NextDouble() * 0.9f,
-                    Size = 2.2f + (float)Math.Pow(rnd.NextDouble(), 2.2) * 6, Phase = (float)(rnd.NextDouble() * 6.28),
-                    Drift = 0.006f + (float)rnd.NextDouble() * 0.014f, Spin = (float)(rnd.NextDouble() - 0.5) * 0.02f, Color = rnd.Next(3),
-                });
-        }
-
-        Streak NewStreak(bool anywhere)
-        {
-            // a point in a tunnel around the camera; it flies toward us (z shrinks)
-            double a = rnd.NextDouble() * Math.PI * 2, r = 0.25 + Math.Sqrt(rnd.NextDouble()) * 1.6;
-            return new Streak { X = (float)(Math.Cos(a) * r), Y = (float)(Math.Sin(a) * r * 0.7), Z = anywhere ? 0.08f + (float)rnd.NextDouble() * 0.92f : 0.85f + (float)rnd.NextDouble() * 0.15f, Speed = 0.6f + (float)rnd.NextDouble() * 0.8f };
+            void Layer(int n, float depth, float min, float max)
+            {
+                for (int i = 0; i < n; i++)
+                    Stars.Add(new Star
+                    {
+                        X = (float)rnd.NextDouble(), Y = (float)rnd.NextDouble(), Depth = depth, Size = min + (float)rnd.NextDouble() * (max - min),
+                        Phase = (float)(rnd.NextDouble() * 6.28), Speed = 0.5f + (float)rnd.NextDouble(), Tint = rnd.Next(10) < 7 ? -1 : rnd.Next(3),
+                    });
+            }
+            Layer(170, 0.3f, 0.6f, 1.2f); Layer(80, 0.6f, 1.1f, 1.9f); Layer(22, 1f, 1.8f, 3f);
         }
 
         public void Warp() => warp = 1;
 
         // loud: 0..1 from the song's loudness, or -1 when AURA hasn't heard the song yet
-        public void Step(float dt, float loud, bool playing)
+        public void Step(float dt, float loud, bool playing, float w, float h)
         {
+            W = w; H = h;
             Time += dt;
             if (loud >= 0)
             {
@@ -202,47 +248,42 @@ namespace Aura
             Kick *= (float)Math.Exp(-dt * 5);
             warp = Math.Max(0, warp - dt / 1.4);
             Peak = warp > 0 ? (float)Math.Sin(Math.PI * (1 - warp)) : 0;
-
-            float speed = (playing ? 0.16f : 0.03f) * (1 + Energy * 1.6f + Kick * 2.2f) + Peak * 1.6f;
-            travel += dt * speed;
-            foreach (var s in Streaks)
+            // stars drift slowly sideways (faster on the big parts of the song)
+            float drift = dt * (playing ? 0.004f : 0.0015f) * (1 + Energy * 1.5f + Kick * 2) + dt * Peak * 0.05f;
+            foreach (var s in Stars) { s.X -= drift * s.Depth * s.Speed; if (s.X < -0.01f) { s.X += 1.02f; s.Y = (float)rnd.NextDouble(); } }
+            // the odd shooting star
+            nextShot -= dt * (1 + Energy);
+            if (nextShot <= 0)
             {
-                s.Z -= dt * speed * s.Speed;
-                if (s.Z < 0.04f) { var n = NewStreak(false); s.X = n.X; s.Y = n.Y; s.Z = n.Z; s.Speed = n.Speed; }
+                nextShot = 3 + rnd.NextDouble() * 7;
+                double ang = Math.PI * (0.1 + rnd.NextDouble() * 0.2) * (rnd.Next(2) == 0 ? 1 : -1) + (rnd.Next(2) == 0 ? 0 : Math.PI);
+                if (Math.Sin(ang) < 0) ang = -ang;      // always heading down
+                float v = H * (0.9f + (float)rnd.NextDouble() * 0.7f);
+                Shots.Add(new Shot { X = (float)rnd.NextDouble() * W, Y = (float)rnd.NextDouble() * H * 0.4f, Vx = (float)Math.Cos(ang) * v, Vy = (float)Math.Sin(ang) * v, Life = 0.6f + (float)rnd.NextDouble() * 0.6f, Len = H * (0.12f + (float)rnd.NextDouble() * 0.1f) });
             }
-            foreach (var d in Dots)
-            {
-                d.Dist += dt * d.Drift * (playing ? 1 + Energy : 0.3f);
-                d.Angle += dt * d.Spin;
-                if (d.Dist > 1.15f) { d.Dist = 0.14f + (float)rnd.NextDouble() * 0.1f; d.Angle = (float)(rnd.NextDouble() * Math.PI * 2); }
-            }
+            for (int i = Shots.Count - 1; i >= 0; i--) { var m = Shots[i]; m.Age += dt; m.X += m.Vx * dt; m.Y += m.Vy * dt; if (m.Age >= m.Life) Shots.RemoveAt(i); }
         }
 
         static float Ease(float dt, float speed) => 1 - (float)Math.Exp(-dt * speed);
 
-        // a streak on screen: from its tail to its head, how bright, how thick
-        public bool Project(Streak s, float cx, float cy, float W, float H, out PointF tail, out PointF head, out float alpha, out float width)
+        // a star on screen: where, how big, how bright; during the warp between songs it's stretched away from (cx, cy) into a line
+        public void Place(Star s, float cx, float cy, out PointF p, out PointF tail, out float r, out float alpha)
         {
-            float f = Math.Min(W, H) * 0.42f;
-            float len = 0.035f + Energy * 0.03f + Kick * 0.05f + Peak * 0.35f;
-            float z0 = s.Z, z1 = s.Z + len * s.Speed;
-            head = new PointF(cx + s.X / z0 * f, cy + s.Y / z0 * f);
-            tail = new PointF(cx + s.X / z1 * f, cy + s.Y / z1 * f);
-            float near = 1 - Math.Min(1, s.Z);
-            alpha = Math.Min(1, near * near * 1.3f + 0.05f) * (0.55f + Energy * 0.35f + Peak * 0.5f);
-            width = 0.8f + near * near * 2.4f;
-            return head.X > -50 && head.X < W + 50 && head.Y > -50 && head.Y < H + 50;
+            p = new PointF(s.X * W, s.Y * H);
+            float tw = 0.55f + 0.45f * (float)Math.Sin(Time * (1.1 + s.Speed) + s.Phase);
+            alpha = Math.Min(1, (0.3f + 0.7f * tw) * (0.45f + s.Depth * 0.55f) * (1 + Kick * 0.4f));
+            r = s.Size * Math.Max(1, Math.Min(W, H) / 1080f) * (s.Depth >= 1 ? 1 + Energy * 0.3f : 1);
+            float k = Peak * 0.35f * s.Depth;
+            tail = new PointF(p.X + (p.X - cx) * k, p.Y + (p.Y - cy) * k);
         }
 
-        // a glowing dot: where, how big, how bright
-        public void Place(Dot d, float cx, float cy, float W, float H, out PointF p, out float r, out float alpha)
+        // a shooting star: its head, its tail and how bright
+        public void Place(Shot m, out PointF head, out PointF tail, out float alpha)
         {
-            float reach = Math.Max(W, H) * 0.55f;
-            p = new PointF(cx + (float)Math.Cos(d.Angle) * d.Dist * reach, cy + (float)Math.Sin(d.Angle) * d.Dist * reach * 0.8f);
-            float tw = 0.6f + 0.4f * (float)Math.Sin(Time * 1.7 + d.Phase);
-            r = d.Size * (1 + Kick * 0.35f) * Math.Max(1, Math.Min(W, H) / 1080f);
-            float edge = d.Dist < 0.25f ? (d.Dist - 0.14f) / 0.11f : d.Dist > 1f ? (1.15f - d.Dist) / 0.15f : 1;
-            alpha = Math.Max(0, Math.Min(1, edge)) * tw * (0.55f + Energy * 0.45f);
+            float k = m.Age / m.Life, vl = (float)Math.Sqrt(m.Vx * m.Vx + m.Vy * m.Vy);
+            alpha = (float)Math.Sin(Math.PI * k);
+            head = new PointF(m.X, m.Y);
+            tail = new PointF(m.X - m.Vx / vl * m.Len, m.Y - m.Vy / vl * m.Len);
         }
 
         // 2:14 and MON, NOV 23 (in the PC's own way of writing time)
