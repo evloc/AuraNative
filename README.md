@@ -41,6 +41,9 @@
   itself: each one is uploaded once to catbox.moe so Discord can load it.
   Otherwise it's the Apple Music cover when it's the very same song and
   picture, or the AURA logo.
+- **Years** — songs without a year get one looked up on MusicBrainz, Apple
+  Music and Genius (only when the title and artist match; the earliest year
+  wins). It's written into the file, and Undo puts it back. Settings → Years.
 - **Undo** — Ctrl+Z puts back the last tag change, era or tracker import;
   Settings → Undo lists the last few.
 - **Fan trackers** — Missing info → Import a fan tracker: a .csv, .xlsx or
@@ -79,7 +82,7 @@
   Ogg, Opus, M4A, WAV and AIFF. AURA writes a new copy, reads it back to check
   it, and only then swaps it in, so a failed save never damages a song. A song
   that's playing keeps playing.
-- **Find a cover** — searches Apple Music and Deezer; use it for one song or
+- **Find a cover** — searches Apple Music, Deezer, Genius (which has art for many unreleased songs) and MusicBrainz; use it for one song or
   the whole album, or choose a picture file.
 - **Fill in blanks from file and folder names** — Music/Artist/Album (2020)/05 -
   Song.mp3 fills in the artist, album, year, number and title. Also: "03 - Juice WRLD - Robbery (v2).mp3"

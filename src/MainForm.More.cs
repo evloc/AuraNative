@@ -21,6 +21,7 @@ namespace Aura
         {
             InitListen();
             if (Prefs.AutoSyncAll) StartAutoSync();
+            if (Prefs.AutoYears && !UiTestMode) StartYears();
             Sound = new SoundStore(Lib) { Background = Prefs.Listen, NeedLoudness = Prefs.Leveling };
             Sound.Ready += id =>
             {

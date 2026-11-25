@@ -42,6 +42,7 @@ namespace Aura
         [DataMember] public bool Discord;
         [DataMember] public string DiscordApp = "";
         [DataMember] public bool DiscordOwnCovers;
+        [DataMember] public bool AutoYears = true;
         [DataMember] public bool AutoSyncAll;           // time every song that has lyrics but no timings, in the background
         [DataMember] public string Separate = "transcribe";   // separate the vocals first: "transcribe", "always", "off"
         [DataMember] public string SongLanguage = "en";
@@ -56,7 +57,7 @@ namespace Aura
             SongsSort = "added"; SongsDesc = true; AutoLyrics = true; CheckUpdates = true;
             RenamePattern = "{artist} - {title}"; ThemeName = "Midnight";
             Listen = true; Mp3Kbps = 320; MiniX = -1; MiniY = -1; WhisperModel = "base";
-            Rate = 1; DiscordApp = ""; Separate = "transcribe"; SongLanguage = "en"; LookOnlineAfterTranscribe = true;
+            Rate = 1; DiscordApp = ""; AutoYears = true; Separate = "transcribe"; SongLanguage = "en"; LookOnlineAfterTranscribe = true;
         }
 
         public static string Dir;

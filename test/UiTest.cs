@@ -514,7 +514,7 @@ namespace Aura
             {
                 var f = (CoverFinderForm)floating;
                 if (f.TestCount == 0 || !Pause(8)) return false;
-                Ok(f.TestCount == 3, "covers from Apple Music and Deezer are listed, duplicates once (" + f.TestCount + ")");
+                Ok(f.TestCount == 4, "covers from Apple Music, Deezer and Genius are listed, duplicates once (" + f.TestCount + ")");
                 ShotForm(f, "33_cover_finder");
                 f.TestPick(0);
                 return true;
@@ -1197,6 +1197,25 @@ namespace Aura
                 File.Delete(Path.Combine(folder, "cover.jpg"));
                 return true;
             });
+            // ---- years from the internet, and more places to find covers
+            Step("years", () =>
+            {
+                var (y, src) = YearLookup.Find(N("b.wav"));
+                Ok(y == 2016 && src == "MusicBrainz", "the year is looked up and the earliest one used (" + y + " from " + src + "; Apple says 2018, Genius 2019)");
+                var (y2, _) = YearLookup.Find(N("a.mp3"));
+                Ok(y2 == 0, "a song none of them knows gets no year (" + y2 + ")");
+                var hits = CoverSearch.Search("Other Guy Night Drive", out bool off);
+                var srcs = hits.Select(h => h.Source).Distinct().OrderBy(x => x).ToList();
+                Ok(srcs.Contains("Genius") && srcs.Contains("MusicBrainz") && srcs.Contains("Apple Music") && srcs.Contains("Deezer"), "covers come from Apple Music, Deezer, Genius and MusicBrainz (" + string.Join(", ", srcs) + ")");
+                return true;
+            });
+            Step("years written", () =>
+            {
+                var t = N("f.opus");
+                F.RunWrites(new List<(Track, TagEdit)> { (t, new TagEdit { Year = "2016" }) }, "Filled in 1 year from the internet");
+                return true;
+            });
+            Step("years saved", () => { if (F.Writing || !Pause(2)) return false; Ok(N("f.opus").Year == "2016" && L.UndoSteps()[0].Label.StartsWith("Filled in"), "a found year is written into the file, and can be undone"); return true; });
             // ---- settings and looks
             Step("settings", () => { F.Go(new Route("settings")); return true; });
             Step("settings 1", () => { if (!Pause(5)) return false; if (F.Page is Canvas c) c.ScrollTo(560, false); return true; });

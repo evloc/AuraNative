@@ -207,6 +207,25 @@ namespace Aura
         [DataMember(Name = "trackName")] public string Track;
         [DataMember(Name = "artistName")] public string Artist;
         [DataMember(Name = "artworkUrl100")] public string Art;
+        [DataMember(Name = "releaseDate")] public string Released;
+    }
+    [DataContract] sealed class MbReleaseGroups { [DataMember(Name = "release-groups")] public List<MbGroup> Groups; }
+    [DataContract] sealed class MbGroup
+    {
+        [DataMember(Name = "id")] public string Id;
+        [DataMember(Name = "title")] public string Title;
+        [DataMember(Name = "first-release-date")] public string First;
+        [DataMember(Name = "artist-credit")] public List<MbCredit> Credit;
+        [DataMember(Name = "score")] public int Score;
+    }
+    [DataContract] sealed class MbCredit { [DataMember(Name = "name")] public string Name; }
+    [DataContract] sealed class MbRecordings { [DataMember(Name = "recordings")] public List<MbRecording> Recordings; }
+    [DataContract] sealed class MbRecording
+    {
+        [DataMember(Name = "title")] public string Title;
+        [DataMember(Name = "first-release-date")] public string First;
+        [DataMember(Name = "artist-credit")] public List<MbCredit> Credit;
+        [DataMember(Name = "score")] public int Score;
     }
     [DataContract] sealed class DeezerResp { [DataMember(Name = "data")] public List<DeezerItem> Data; }
     [DataContract] sealed class DeezerItem
@@ -224,6 +243,12 @@ namespace Aura
     {
         public static string ItunesUrl = Environment.GetEnvironmentVariable("AURA_ITUNES_URL") ?? "https://itunes.apple.com";
         public static string DeezerUrl = Environment.GetEnvironmentVariable("AURA_DEEZER_URL") ?? "https://api.deezer.com";
+        public static string MusicBrainzUrl = Environment.GetEnvironmentVariable("AURA_MB_URL") ?? "https://musicbrainz.org";
+        public static string CoverArtUrl = Environment.GetEnvironmentVariable("AURA_CAA_URL") ?? "https://coverartarchive.org";
+        public const string Sources = "Apple Music, Deezer, Genius and MusicBrainz";
+
+        // MusicBrainz asks programs to say who they are
+        static string MbUA => "AURA-Native/" + App.Version + " ( https://github.com/evloc/AuraNative )";
 
         public static List<CoverHit> Search(string q, out bool offline)
         {
@@ -235,13 +260,22 @@ namespace Aura
                     .Where(r => !string.IsNullOrEmpty(r.Art)).Select(r => new CoverHit { Source = "Apple Music", Title = r.Album ?? r.Track ?? "", Artist = r.Artist ?? "", Small = r.Art, Big = r.Art.Replace("100x100bb", "1000x1000bb") }).ToList()),
                 Task.Run(() => (Net.Json<DeezerResp>(Net.Get(DeezerUrl + "/search/album?limit=12&q=" + Uri.EscapeDataString(q)))?.Data ?? new List<DeezerItem>())
                     .Where(r => !string.IsNullOrEmpty(r.Big)).Select(r => new CoverHit { Source = "Deezer", Title = r.Title ?? "", Artist = r.Artist?.Name ?? "", Small = r.Small ?? r.Big, Big = r.Big }).ToList()),
+                // Genius: song art too, so unreleased songs and leaks often have a picture here
+                Task.Run(() => LyricsOnline.GeniusSearch(q).Select(x => x.type == "song"
+                        ? new CoverHit { Source = "Genius", Title = x.r.Title ?? "", Artist = x.r.Primary?.Name ?? x.r.ArtistNames ?? "", Small = x.r.SongArtSmall ?? x.r.SongArt, Big = x.r.SongArt }
+                        : new CoverHit { Source = "Genius", Title = x.r.Name ?? "", Artist = x.r.Artist?.Name ?? "", Small = x.r.AlbumArtSmall ?? x.r.AlbumArt, Big = x.r.AlbumArt })
+                    .Where(h => !string.IsNullOrEmpty(h.Big) && !h.Big.Contains("default_cover")).ToList()),
+                // MusicBrainz + the Cover Art Archive (albums, EPs and singles; some have no picture — those tiles drop out)
+                Task.Run(() => (Net.Json<MbReleaseGroups>(Net.Get(MusicBrainzUrl + "/ws/2/release-group?fmt=json&limit=8&query=" + Uri.EscapeDataString(q), 9000, MbUA))?.Groups ?? new List<MbGroup>())
+                    .Where(g => g.Score >= 70 && !string.IsNullOrEmpty(g.Id))
+                    .Select(g => new CoverHit { Source = "MusicBrainz", Title = g.Title ?? "", Artist = g.Credit?.FirstOrDefault()?.Name ?? "", Small = CoverArtUrl + "/release-group/" + g.Id + "/front-250", Big = CoverArtUrl + "/release-group/" + g.Id + "/front-1200" }).ToList()),
             };
             try { Task.WaitAll(jobs, 10000); } catch { }
             var all = new List<CoverHit>(); int errors = 0;
             foreach (var j in jobs) { if (j.Status == TaskStatus.RanToCompletion) all.AddRange(j.Result); else errors++; }
             offline = errors == jobs.Length;
             // the same picture often comes back twice
-            return all.GroupBy(h => h.Big).Select(g => g.First()).Take(30).ToList();
+            return all.GroupBy(h => h.Big).Select(g => g.First()).Take(48).ToList();
         }
 
         public static byte[] Download(string url)
@@ -312,7 +346,7 @@ namespace Aura
             int no = ++searchNo;
             string q = query.Text.Trim();
             if (q.Length == 0) return;
-            status.Text = "Searching Apple Music and Deezer…";
+            status.Text = "Searching " + CoverSearch.Sources + "…";
             grid.Controls.Clear(); hits.Clear(); picked = null; use.Enabled = false;
             Task.Run(() => { var r = CoverSearch.Search(q, out bool off); return (r, off); }).ContinueWith(tk =>
             {
@@ -323,7 +357,7 @@ namespace Aura
                     if (tk.IsFaulted) { status.Text = "Something went wrong: " + tk.Exception?.GetBaseException().Message; return; }
                     var (r, off) = tk.Result;
                     hits = r;
-                    status.Text = off ? "Couldn't reach Apple Music or Deezer — check your internet." : r.Count == 0 ? "Nothing found. Try the album or song name with the artist." : "Click a cover, then Use this cover.";
+                    status.Text = off ? "Couldn't reach " + CoverSearch.Sources + " — check your internet." : r.Count == 0 ? "Nothing found. Try the album or song name with the artist." : "Click a cover, then Use this cover.";
                     foreach (var h in r) AddTile(h, no);
                 }));
             });
@@ -346,13 +380,16 @@ namespace Aura
             grid.Controls.Add(tile);
             Task.Run(() => CoverSearch.Download(h.Small)).ContinueWith(tk =>
             {
-                if (tk.IsFaulted || IsDisposed) return;
+                if (IsDisposed) return;
+                // no picture there after all (MusicBrainz often has none): take the tile away
+                void Drop() { try { BeginInvoke(new Action(() => { if (!IsDisposed && no == searchNo) { grid.Controls.Remove(tile); tile.Dispose(); hits.Remove(h); } })); } catch { } }
+                if (tk.IsFaulted) { Drop(); return; }
                 try
                 {
                     var img = Image.FromStream(new MemoryStream(tk.Result));
                     BeginInvoke(new Action(() => { if (!IsDisposed && no == searchNo) pb.Image = img; }));
                 }
-                catch { }
+                catch { Drop(); }
             });
         }
 

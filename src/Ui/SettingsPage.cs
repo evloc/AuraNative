@@ -140,6 +140,17 @@ namespace Aura
             if (without > 0) Pill(g, "again", x + cw - Theme.F(44) - Theme.F(220), lyy + Theme.F(32), "Look again for all", () => { shell.Lyrics.TryAllAgain(); shell.Toast("Looking again for songs without lyrics"); Invalidate(); }, false, "refresh", 34);
             y += h + Theme.F(20);
 
+            // ---- years
+            {
+                var mfy = FindForm() as MainForm;
+                h = Theme.F(170);
+                x = Card(g, y, h, "Years", "Songs without a year get one looked up on MusicBrainz, Apple Music and Genius (it only uses a match when the title and artist both agree, and the earliest year it finds). It's written into the song file; Ctrl+Z or Settings → Undo puts it back.", 60);
+                float yy = y + Theme.F(112);
+                Toggle(g, "years", x, yy, cw - Theme.F(44), "Fill in missing years from the internet", shell.Prefs.AutoYears, () => { shell.Prefs.AutoYears = !shell.Prefs.AutoYears; shell.Prefs.Save(); mfy?.YearsChanged(); Invalidate(); });
+                Theme.Write(g, mfy?.YearStatus ?? "", Theme.Font(12.5f), Theme.Faint, new RectangleF(x, yy + Theme.F(36), cw - Theme.F(44), Theme.F(22)));
+                y += h + Theme.F(20);
+            }
+
             // ---- listening
             h = Theme.F(196);
             x = Card(g, y, h, "Listening", "AURA listens to each song once, slowly in the background, to draw its waveform, find its tempo (BPM) and key, line up versions when you switch between them, and spot duplicates that have different names. It runs at the lowest priority and rests between songs.", 60);
@@ -221,7 +232,7 @@ namespace Aura
             }
             if (!any) Theme.Write(g, Whisper.Load() ? "No models downloaded yet." : "Not available: " + Whisper.LoadError + ".", Theme.Font(13), Theme.Faint, new RectangleF(x, wy, cw - Theme.F(60), Theme.F(30)));
             wy += Theme.F(46);
-            Toggle(g, "asa", x, wy, cw - Theme.F(44), "Time every song by itself — slowly, in the background, songs that have lyrics but no timings", shell.Prefs.AutoSyncAll, () => { shell.Prefs.AutoSyncAll = !shell.Prefs.AutoSyncAll; shell.Prefs.Save(); mf?.AutoSyncChanged(); Invalidate(); });
+            Toggle(g, "asa", x, wy, cw - Theme.F(44), "Time every song by itself, word by word — slowly, in the background (songs with no timings, or timed only line by line)", shell.Prefs.AutoSyncAll, () => { shell.Prefs.AutoSyncAll = !shell.Prefs.AutoSyncAll; shell.Prefs.Save(); mf?.AutoSyncChanged(); Invalidate(); });
             wy += Theme.F(38);
             Theme.Write(g, mf?.AutoSyncStatus ?? "", Theme.Font(12.5f), Theme.Faint, new RectangleF(x + Theme.F(56), wy - Theme.F(4), cw - Theme.F(100), Theme.F(22)));
             wy += Theme.F(24);

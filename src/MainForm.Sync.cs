@@ -90,6 +90,10 @@ namespace Aura
         static bool FullScreenOpen => FullLyricsForm.Open > 0;
 #endif
 
+        static bool NeedsWords(Lyrics l) => l != null && !l.ByWord && LinesOf(l).Count > 0;
+        static List<string> LinesOf(Lyrics l) =>
+            (l.Timed ? l.Lines.Select(x => x.Text) : (l.Plain ?? "").Split('\n')).Select(x => x.Trim()).Where(x => x.Length > 0 && !(x.StartsWith("[") && x.EndsWith("]"))).ToList();
+
         public void AutoSyncChanged()
         {
             if (Prefs.AutoSyncAll && autoSync == null) StartAutoSync();
@@ -134,21 +138,21 @@ namespace Aura
                                 if (autoSyncStop) break;
                                 if (tried.Contains(t.Id) || !t.HasLyrics && !found.Contains(t.Id)) continue;
                                 var l = Lyrics.Get(t);
-                                if (l == null || l.Timed || string.IsNullOrWhiteSpace(l.Plain)) continue;
-                                todo.Enqueue(t.Id);
+                                // songs with no timings, and songs timed line by line only (they get word-by-word timings)
+                                if (NeedsWords(l)) todo.Enqueue(t.Id);
                                 Thread.Sleep(2);
                             }
                         }
                         if (todo.Count == 0) { Say(done > 0 ? "Timed " + Theme.Count(done, "song") + " — every song with lyrics has timings now." : "Every song with lyrics has timings."); Thread.Sleep(60000); continue; }
                         var next = Lib.Get(todo.Dequeue());
                         var lyr = next == null ? null : Lyrics.Get(next);
-                        if (lyr == null || lyr.Timed || string.IsNullOrWhiteSpace(lyr.Plain)) continue;
+                        if (!NeedsWords(lyr)) continue;
                         Say("Timing " + next.Name + "  ·  " + Theme.Count(todo.Count + 1, "song") + " to go");
                         bool ok = false;
                         var took = System.Diagnostics.Stopwatch.StartNew();
                         try
                         {
-                            var lines = lyr.Plain.Split('\n').Select(x => x.Trim()).Where(x => x.Length > 0 && !(x.StartsWith("[") && x.EndsWith("]"))).ToList();
+                            var lines = LinesOf(lyr);
                             // never the vocal model here: that's another gigabyte or two, for every song
                             var pcm = Hearing.Pcm(next, false, (s2, k) => { }, () => autoSyncStop, out _);
                             var prompt = string.Join(" ", lines); if (prompt.Length > 220) prompt = prompt.Substring(0, 220);
@@ -156,7 +160,8 @@ namespace Aura
                             int threads = Player.IsPlaying ? 1 : 2;
                             var heard = Whisper.Listen(m.File, m.Dtw, pcm, "auto", prompt, 1, null, () => autoSyncStop || TranscribeOpen || FullScreenOpen, out _, threads);
                             var r = Sync.Align(lines, heard);
-                            if (r.Confidence >= 0.5 && r.Lines.Count(x => x.T >= 0) > 0)
+                            // lyrics that were already timed by line are only replaced by a sure match
+                            if (r.Confidence >= (lyr.Timed ? 0.65 : 0.5) && r.Lines.Count(x => x.T >= 0) > 0)
                             {
                                 var timed = r.Lines.Where(x => x.T >= 0).ToList();
                                 var lrc = Sync.ToLrc(timed); var words = Sync.ToWords(timed);

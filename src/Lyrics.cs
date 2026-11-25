@@ -162,7 +162,15 @@ namespace Aura
         [DataMember(Name = "url")] public string Url;
         [DataMember(Name = "artist_names")] public string ArtistNames;
         [DataMember(Name = "primary_artist")] public GeniusArtist Primary;
+        [DataMember(Name = "song_art_image_url")] public string SongArt;
+        [DataMember(Name = "song_art_image_thumbnail_url")] public string SongArtSmall;
+        [DataMember(Name = "cover_art_url")] public string AlbumArt;
+        [DataMember(Name = "cover_art_thumbnail_url")] public string AlbumArtSmall;
+        [DataMember(Name = "name")] public string Name;           // albums
+        [DataMember(Name = "artist")] public GeniusArtist Artist; // albums
+        [DataMember(Name = "release_date_components")] public GeniusDate Released;
     }
+    [DataContract] sealed class GeniusDate { [DataMember(Name = "year")] public int? Year; }
     [DataContract] sealed class GeniusArtist { [DataMember(Name = "name")] public string Name; }
 
     static class LyricsOnline
@@ -290,6 +298,21 @@ namespace Aura
                     if (r == null || string.IsNullOrEmpty(r.Url) || !seen.Add(r.Url)) continue;
                     outp.Add(new Found { Source = "genius", Title = r.Title ?? "", Artist = r.Primary?.Name ?? r.ArtistNames ?? "", Url = r.Url });
                 }
+            return outp;
+        }
+
+        // every song and album Genius finds for a search (for covers and years); empty when Genius refuses
+        public static List<(string type, GeniusResult r)> GeniusSearch(string q)
+        {
+            var outp = new List<(string, GeniusResult)>();
+            if (geniusRefused) return outp;
+            string json;
+            try { json = Net.Get(GeniusUrl + "/api/search/multi?per_page=5&q=" + Uri.EscapeDataString(q), 8000, Net.BrowserUA, "application/json, text/plain, */*", GeniusUrl + "/"); }
+            catch (WebException e) when ((e.Response as HttpWebResponse)?.StatusCode == HttpStatusCode.Forbidden) { geniusRefused = true; return outp; }
+            var resp = Net.Json<GeniusResp>(json);
+            foreach (var sec in resp?.Response?.Sections ?? new List<GeniusSection>())
+                foreach (var hit in sec.Hits ?? new List<GeniusHit>())
+                    if (hit.Result != null && (hit.Type == "song" || hit.Type == "album")) outp.Add((hit.Type, hit.Result));
             return outp;
         }
 
