@@ -1176,6 +1176,8 @@ namespace Aura
                 Console.WriteLine("  " + a);
                 Ok(a.Contains("\"type\":2") && a.Contains("\"details\":\"Lucid Dreams\"") && a.Contains("\"state\":\"by Juice WRLD\"") && a.Contains("\"large_image\":\"https://example.com/c.jpg\"") && a.Contains("\"end\":1700000040104"),
                     "the Discord status says Listening to the song, by the artist, with its cover and a time bar");
+                var noCover = Discord.TestActivity(t, "");
+                Ok(noCover.Contains("\"large_image\":\"" + Discord.Logo + "\""), "with no cover Discord gets the AURA logo's link (not an image name it may not have)");
                 var c = Discord.TestCover(N("b.wav"));
                 Ok(c != null && c.EndsWith("512x512bb.jpg"), "the cover's web link is looked up on Apple Music (" + c + ")");
                 Ok(Discord.TestCover(t) == "", "but not taken from a different artist's song");

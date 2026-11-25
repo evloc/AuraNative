@@ -108,32 +108,53 @@ namespace Aura
                 try
                 {
                     int done = 0;
+                    // the songs to do, worked out once (and again every half hour) — not by re-reading every song's
+                    // lyrics before each one, which read thousands of files over and over
+                    var todo = new Queue<long>(); DateTime listed = DateTime.MinValue;
                     while (!autoSyncStop)
                     {
-                        var m = Whisper.Models.FirstOrDefault(x => x.Name == Prefs.WhisperModel && x.Ready) ?? Whisper.Models.FirstOrDefault(x => x.Ready);
-                        if (m == null) { Say("Waiting for a speech model — time one song by hand first (it downloads the model)."); Thread.Sleep(30000); continue; }
-                        if (!Whisper.Load()) { Say("Not available: " + Whisper.LoadError + "."); return; }
-                        if (TranscribeOpen || FullScreenOpen || (Player.IsPlaying && Environment.ProcessorCount < 4)) { Thread.Sleep(5000); continue; }
-                        var tried = new HashSet<long>(Lib.Db.Rows("SELECT track_id FROM autosync_tried").Select(r => Conv.L(r[0])));
-                        Track next = null; Lyrics lyr = null; int left = 0;
-                        foreach (var t in Lib.Tracks.ToList())
+                        // in the background it always uses the small "base" model: big models take gigabytes of memory
+                        // and lots of processor, and lining up lyrics you already have doesn't need them
+                        var m = Whisper.Models.First(x => x.Name == "base");
+                        if (!m.Ready)
                         {
-                            if (tried.Contains(t.Id) || !t.HasLyrics && !Lyrics.HasFound(t.Id)) continue;
-                            var l = Lyrics.Get(t);
-                            if (l == null || l.Timed || string.IsNullOrWhiteSpace(l.Plain)) continue;
-                            left++;
-                            if (next == null) { next = t; lyr = l; }
+                            Say("Downloading the small speech model for timing in the background (148 MB, once)…");
+                            try { Whisper.Download(m, p => Say("Downloading the small speech model (148 MB, once)… " + (p * 100).ToString("0") + "%"), () => autoSyncStop); }
+                            catch (Exception e) { if (autoSyncStop) break; Say("Couldn't download the small speech model (" + e.Message + "). Trying again in a while."); Thread.Sleep(300000); continue; }
                         }
-                        if (next == null) { Say(done > 0 ? "Timed " + Theme.Count(done, "song") + " — every song with lyrics has timings now." : "Every song with lyrics has timings."); Thread.Sleep(60000); continue; }
-                        Say("Timing " + next.Name + "  ·  " + Theme.Count(left, "song") + " to go");
+                        if (!Whisper.Load()) { Say("Not available: " + Whisper.LoadError + "."); return; }
+                        if (TranscribeOpen || FullScreenOpen) { Thread.Sleep(5000); continue; }
+                        if (todo.Count == 0 && (DateTime.Now - listed).TotalMinutes > 30)
+                        {
+                            listed = DateTime.Now;
+                            var tried = new HashSet<long>(Lib.Db.Rows("SELECT track_id FROM autosync_tried").Select(r => Conv.L(r[0])));
+                            var found = new HashSet<long>(Lib.Db.Rows("SELECT track_id FROM found_lyrics").Select(r => Conv.L(r[0])));
+                            foreach (var t in Lib.Tracks.ToList())
+                            {
+                                if (autoSyncStop) break;
+                                if (tried.Contains(t.Id) || !t.HasLyrics && !found.Contains(t.Id)) continue;
+                                var l = Lyrics.Get(t);
+                                if (l == null || l.Timed || string.IsNullOrWhiteSpace(l.Plain)) continue;
+                                todo.Enqueue(t.Id);
+                                Thread.Sleep(2);
+                            }
+                        }
+                        if (todo.Count == 0) { Say(done > 0 ? "Timed " + Theme.Count(done, "song") + " — every song with lyrics has timings now." : "Every song with lyrics has timings."); Thread.Sleep(60000); continue; }
+                        var next = Lib.Get(todo.Dequeue());
+                        var lyr = next == null ? null : Lyrics.Get(next);
+                        if (lyr == null || lyr.Timed || string.IsNullOrWhiteSpace(lyr.Plain)) continue;
+                        Say("Timing " + next.Name + "  ·  " + Theme.Count(todo.Count + 1, "song") + " to go");
                         bool ok = false;
+                        var took = System.Diagnostics.Stopwatch.StartNew();
                         try
                         {
                             var lines = lyr.Plain.Split('\n').Select(x => x.Trim()).Where(x => x.Length > 0 && !(x.StartsWith("[") && x.EndsWith("]"))).ToList();
-                            var pcm = Hearing.Pcm(next, Prefs.Separate == "always", (s, k) => { }, () => autoSyncStop, out _);
+                            // never the vocal model here: that's another gigabyte or two, for every song
+                            var pcm = Hearing.Pcm(next, false, (s2, k) => { }, () => autoSyncStop, out _);
                             var prompt = string.Join(" ", lines); if (prompt.Length > 220) prompt = prompt.Substring(0, 220);
-                            // in the background: a few cores only, so the music and the screen stay smooth
-                            var heard = Whisper.Listen(m.File, m.Dtw, pcm, "auto", prompt, 1, null, () => autoSyncStop, out _, Math.Max(1, Environment.ProcessorCount / 4));
+                            // one core while music plays, two when it doesn't: the music and the screen come first
+                            int threads = Player.IsPlaying ? 1 : 2;
+                            var heard = Whisper.Listen(m.File, m.Dtw, pcm, "auto", prompt, 1, null, () => autoSyncStop || TranscribeOpen || FullScreenOpen, out _, threads);
                             var r = Sync.Align(lines, heard);
                             if (r.Confidence >= 0.5 && r.Lines.Count(x => x.T >= 0) > 0)
                             {
@@ -144,10 +165,11 @@ namespace Aura
                                 ok = true; done++;
                             }
                         }
-                        catch (OperationCanceledException) { break; }
+                        catch (OperationCanceledException) { if (autoSyncStop) break; todo.Enqueue(next.Id); Thread.Sleep(5000); continue; }   // full screen opened: do it later
                         catch (Exception e) { App.Log("auto-sync " + next.Name + ": " + e.Message); }
                         Lib.Db.Exec("INSERT OR REPLACE INTO autosync_tried (track_id,ts,ok) VALUES (?,?,?)", next.Id, Library.Now, ok ? 1 : 0);
-                        Thread.Sleep(2000);
+                        // rest as long as the work took
+                        for (long w = Math.Min(60000, Math.Max(2000, took.ElapsedMilliseconds)); w > 0 && !autoSyncStop; w -= 500) Thread.Sleep(500);
                     }
                 }
                 finally { autoSync = null; if (autoSyncStop) Say(""); }

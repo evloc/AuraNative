@@ -93,6 +93,9 @@ namespace Aura
         }
 
         // ---------- your own covers on Discord ----------
+        // the AURA logo, from the project's page on GitHub (an image key would need a picture uploaded to your Discord app;
+        // without one Discord shows a question mark)
+        public const string Logo = "https://raw.githubusercontent.com/evloc/AuraNative/main/discord-logo.png";
         public static void ClearCovers() { lock (covers) covers.Clear(); }
         public static bool UploadOwn;                     // Settings → Discord status → Show my own covers
         public static Db Db;                              // remembers what's already online, so each picture goes up once
@@ -173,8 +176,8 @@ namespace Aura
             string title = t.Name.Length < 2 ? t.Name + "  " : t.Name, by = "by " + t.ArtistName;
             if (title.Length > 120) title = title.Substring(0, 120);
             string art = !string.IsNullOrEmpty(cover)
-                ? "\"large_image\":" + J(cover) + ",\"large_text\":" + J(t.Album.Length > 0 ? t.Album : t.Name) + ",\"small_image\":\"aura\",\"small_text\":\"AURA\""
-                : "\"large_image\":\"aura\",\"large_text\":" + J(t.Album.Length > 0 ? t.Album : "AURA");
+                ? "\"large_image\":" + J(cover) + ",\"large_text\":" + J(t.Album.Length > 0 ? t.Album : t.Name) + ",\"small_image\":" + J(Logo) + ",\"small_text\":\"AURA\""
+                : "\"large_image\":" + J(Logo) + ",\"large_text\":" + J(t.Album.Length > 0 ? t.Album : "AURA");
             // type 2 = "Listening to"; status_display_type 2 = show the song's name (not "AURA") in the member list
             return "{" + (withType ? "\"type\":2,\"status_display_type\":2," : "") + "\"details\":" + J(title) + ",\"state\":" + J(by.Length > 120 ? by.Substring(0, 120) : by)
                 + ",\"timestamps\":{\"start\":" + n.StartMs + (end > 0 ? ",\"end\":" + end : "") + "}"

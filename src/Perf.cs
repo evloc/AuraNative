@@ -59,7 +59,7 @@ namespace Aura
                     now[th.Id] = t;
                     if (wall > 0.2 && lastThreads.TryGetValue(th.Id, out var before))
                     {
-                        string part; lock (names) if (!names.TryGetValue(th.Id, out part)) part = "other (sound output, graphics card, .NET)";
+                        string part; lock (names) if (!names.TryGetValue(th.Id, out part)) part = "other (speech model, sound output, graphics card, .NET)";
                         byPart[part] = (byPart.TryGetValue(part, out var v) ? v : 0) + (t - before).TotalSeconds / wall / cores * 100;
                     }
                 }
