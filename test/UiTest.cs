@@ -1179,6 +1179,20 @@ namespace Aura
                 var c = Discord.TestCover(N("b.wav"));
                 Ok(c != null && c.EndsWith("512x512bb.jpg"), "the cover's web link is looked up on Apple Music (" + c + ")");
                 Ok(Discord.TestCover(t) == "", "but not taken from a different artist's song");
+                // the song has its own cover, and Apple's is a different picture: show the AURA logo, not a wrong cover
+                var folder = Path.GetDirectoryName(N("b.wav").Path);
+                using (var bmp = new Bitmap(300, 300)) { using (var g = Graphics.FromImage(bmp)) { g.Clear(Color.Black); g.FillEllipse(Brushes.White, 40, 40, 120, 220); } bmp.Save(Path.Combine(folder, "cover.jpg"), System.Drawing.Imaging.ImageFormat.Jpeg); }
+                Discord.TestClear();
+                var c2 = Discord.TestCover(N("b.wav"));
+                Ok(c2 == "", "a song with its own cover doesn't get a different picture from Apple Music (" + c2 + ")");
+                // with "show my own covers" on, the song's own cover is put online once and its link used
+                Discord.UploadOwn = true; Discord.Db = L.Db; Discord.UploadUrl = "http://127.0.0.1:7900/upload"; Discord.TestClear();
+                var up1 = Discord.TestCover(N("b.wav"));
+                Discord.TestClear();
+                var up2 = Discord.TestCover(N("b.wav"));
+                Ok(up1 != null && up1.StartsWith("https://files.example/") && up2 == up1, "your own cover goes online once and Discord gets its link (" + up1 + ", again: " + up2 + ")");
+                Discord.UploadOwn = false; Discord.TestClear();
+                File.Delete(Path.Combine(folder, "cover.jpg"));
                 return true;
             });
             // ---- settings and looks

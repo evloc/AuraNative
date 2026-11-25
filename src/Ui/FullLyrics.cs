@@ -479,6 +479,7 @@ namespace Aura
             var accent = Theme.AccentTarget;
             new System.Threading.Thread(() =>
             {
+                Perf.Here("full screen: reading the cover");
                 try
                 {
                     s.Cover = Art.LoadBig(t, coverPx) ?? copy;

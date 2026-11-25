@@ -553,6 +553,7 @@ namespace Aura
 
         void Run()
         {
+            Perf.Here("listening to songs");
             while (!stop)
             {
                 if (Paused) { lock (gate) { Monitor.Wait(gate, 2000); } continue; }

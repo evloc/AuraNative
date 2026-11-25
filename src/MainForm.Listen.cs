@@ -42,6 +42,7 @@ namespace Aura
         public void ApplyDiscord()
         {
             discord?.Dispose(); discord = null;
+            Discord.UploadOwn = Prefs.DiscordOwnCovers; Discord.Db = Lib.Db; Discord.ClearCovers();
             if (Prefs.Discord && Prefs.DiscordApp.Trim().Length > 0) { discord = new Discord(Prefs.DiscordApp.Trim()); discord.Update(Player.Current, Player.IsPlaying, Player.Position); }
         }
 

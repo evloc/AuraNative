@@ -288,6 +288,7 @@ CREATE TABLE IF NOT EXISTS version_groups (track_id INTEGER PRIMARY KEY, song TE
         {
             var th = new Thread(() =>
             {
+                Perf.Here("lyrics search index");
                 try
                 {
                     var have = new Dictionary<long, double>();

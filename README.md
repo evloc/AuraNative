@@ -35,8 +35,12 @@
 - **Speed** — 0.75× to 1.5× (Now Playing).
 - **Bookmarks** — press B (or the Bookmark button) to mark a moment; they show
   on the waveform — click to jump, right-click to remove.
-- **Discord status** — "Listening to" on your Discord profile (Settings →
-  Discord status; needs a free Discord app's Application ID).
+- **Discord status** — "Listening to" on your Discord profile, with the
+  song's cover (Settings → Discord status; needs a free Discord app's
+  Application ID). Turn on "Show my own covers" to see the covers from AURA
+  itself: each one is uploaded once to catbox.moe so Discord can load it.
+  Otherwise it's the Apple Music cover when it's the very same song and
+  picture, or the AURA logo.
 - **Undo** — Ctrl+Z puts back the last tag change, era or tracker import;
   Settings → Undo lists the last few.
 - **Fan trackers** — Missing info → Import a fan tracker: a .csv, .xlsx or

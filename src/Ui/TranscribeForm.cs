@@ -138,6 +138,7 @@ namespace Aura
             vocals.Enabled = false; online = null;
             new Thread(() =>
             {
+                Perf.Here("writing lyrics down (Whisper)");
                 try
                 {
                     if (!m.Ready)

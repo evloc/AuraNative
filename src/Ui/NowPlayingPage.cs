@@ -37,7 +37,11 @@ namespace Aura
             {
                 try
                 {
-                    host = new Aura.Wpf.LyricsHost { Visible = false };
+                    // one lyrics view for the whole app, moved into each Now Playing page: making a new one for every visit
+                    // leaks memory (a WPF window inside a WinForms one is never quite freed)
+                    if (sharedHost == null || sharedHost.IsDisposed) sharedHost = new Aura.Wpf.LyricsHost();
+                    host = sharedHost;
+                    host.Visible = false;
                     host.Position = () => shell.Player.SmoothPosition;
                     host.View.Seek = sec => shell.Player.Seek(sec);
                     Controls.Add(host);
@@ -53,6 +57,7 @@ namespace Aura
 #if WPF
         Aura.Wpf.LyricsHost host;
         Rectangle hostArea; Bitmap hostBg;
+        static Aura.Wpf.LyricsHost sharedHost;
         bool UsingHost => host != null && host.Visible;
         // the lyrics drawn by the graphics card, placed over the lyrics area
         bool HostLyrics(Lyrics l, Track t)
@@ -92,7 +97,18 @@ namespace Aura
             Invalidate();
         }
 
-        protected override void Dispose(bool disposing) { if (disposing) { tick.Dispose(); frames.Dispose(); pane.Dispose(); backdrop?.Dispose(); } base.Dispose(disposing); }
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+#if WPF
+                // hand the shared lyrics view back instead of letting it be thrown away with the page
+                if (host != null) { try { host.Run(false); host.Visible = false; Controls.Remove(host); } catch { } host = null; }
+#endif
+                tick.Dispose(); frames.Dispose(); pane.Dispose(); backdrop?.Dispose();
+            }
+            base.Dispose(disposing);
+        }
 
         // the cover, blurred, behind everything
         void DrawBackdrop(Graphics g, Track t)

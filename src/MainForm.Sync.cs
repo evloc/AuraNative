@@ -104,6 +104,7 @@ namespace Aura
             void Say(string s) { AutoSyncStatus = s; ctx?.Post(_ => { if (Current?.Kind == "settings") Page?.Invalidate(); }, null); }
             autoSync = new Thread(() =>
             {
+                Perf.Here("timing lyrics in the background");
                 try
                 {
                     int done = 0;

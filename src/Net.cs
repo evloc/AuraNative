@@ -32,6 +32,15 @@ namespace Aura
                 return r.ReadToEnd();
         }
 
+        public static byte[] Bytes(string url, int timeoutMs = 9000)
+        {
+            var req = (HttpWebRequest)WebRequest.Create(url);
+            req.UserAgent = AppUA; req.Timeout = timeoutMs; req.ReadWriteTimeout = timeoutMs;
+            using (var resp = (HttpWebResponse)req.GetResponse())
+            using (var s = resp.GetResponseStream())
+            using (var ms = new MemoryStream()) { s.CopyTo(ms); return ms.ToArray(); }
+        }
+
         public static T Json<T>(string text) where T : class
         {
             using (var ms = new MemoryStream(Encoding.UTF8.GetBytes(text ?? "")))

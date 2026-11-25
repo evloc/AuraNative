@@ -215,6 +215,7 @@ CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT)";
             var list = folders.ToList();
             var th = new Thread(() =>
             {
+                Perf.Here("scanning folders");
                 try { ScanNow(list); }
                 catch (Exception e) { App.Log("scan failed: " + e); }
                 finally

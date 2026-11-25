@@ -549,6 +549,7 @@ CREATE TABLE IF NOT EXISTS lyrics_tried (track_id INTEGER PRIMARY KEY, ts REAL)"
 
         void AutoLoop()
         {
+            Perf.Here("finding lyrics online");
             Thread.Sleep(8000);           // let AURA finish starting first
             int fails = 0;
             while (true)

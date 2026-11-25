@@ -162,8 +162,10 @@ namespace Aura
         }
 
         // size in pixels at 100%; semi = semibold
+        public static int FontCount => fonts.Count;
         public static Font Font(float px, FontStyle style = FontStyle.Regular, bool semi = false)
         {
+            px = (float)Math.Round(px * 2) / 2;        // sizes worked out from the screen land on half steps, so the font list can't keep growing
             var key = (px, style, semi);
             if (fonts.TryGetValue(key, out var f)) return f;
             string fam = Family;
@@ -226,8 +228,45 @@ namespace Aura
         }
 
         // covers are scaled and rounded once per size, then just copied to the screen (much smoother scrolling)
-        static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Image, Dictionary<(int, int, int, bool), Bitmap>> scaled =
-            new System.Runtime.CompilerServices.ConditionalWeakTable<Image, Dictionary<(int, int, int, bool), Bitmap>>();
+        // Kept within a budget (oldest dropped first) and freed right away when a cover is let go: these are
+        // native pictures the garbage collector doesn't see, so they must never wait for it.
+        static readonly Dictionary<Image, Dictionary<(int, int, int, bool), Bitmap>> scaled = new Dictionary<Image, Dictionary<(int, int, int, bool), Bitmap>>();
+        static readonly LinkedList<Image> scaledOrder = new LinkedList<Image>();
+        static readonly Dictionary<Image, LinkedListNode<Image>> scaledNode = new Dictionary<Image, LinkedListNode<Image>>();
+        static long scaledPixels;
+        const long ScaledBudget = 40_000_000;          // about 160 MB of ready-made covers
+        public static long ScaledBytes => scaledPixels * 4;
+        public static int ScaledCount { get { lock (scaled) return scaled.Values.Sum(d => d.Count); } }
+
+        public static void ForgetScaled(Image img)
+        {
+            lock (scaled)
+            {
+                if (!scaled.TryGetValue(img, out var d)) return;
+                foreach (var x in d.Values) { scaledPixels -= (long)x.Width * x.Height; x.Dispose(); }
+                scaled.Remove(img);
+                if (scaledNode.TryGetValue(img, out var n)) { scaledOrder.Remove(n); scaledNode.Remove(img); }
+            }
+        }
+
+        static Dictionary<(int, int, int, bool), Bitmap> ScaledFor(Image img)
+        {
+            if (!scaled.TryGetValue(img, out var d)) { d = new Dictionary<(int, int, int, bool), Bitmap>(); scaled[img] = d; }
+            if (scaledNode.TryGetValue(img, out var n)) { scaledOrder.Remove(n); scaledOrder.AddFirst(n); }
+            else scaledNode[img] = scaledOrder.AddFirst(img);
+            return d;
+        }
+
+        static void TrimScaled(Image keep)
+        {
+            while (scaledPixels > ScaledBudget && scaledOrder.Count > 1)
+            {
+                var last = scaledOrder.Last.Value;
+                if (last == keep) break;
+                scaledOrder.RemoveLast(); scaledNode.Remove(last);
+                if (scaled.TryGetValue(last, out var d)) { foreach (var x in d.Values) { scaledPixels -= (long)x.Width * x.Height; x.Dispose(); } scaled.Remove(last); }
+            }
+        }
 
         public static void Image(Graphics g, Image img, RectangleF r, float rad, bool circle = false)
         {
@@ -236,13 +275,13 @@ namespace Aura
             Bitmap b = null;
             if (w <= 1600 && h <= 1600)
             {
-                var d = scaled.GetOrCreateValue(img);
-                lock (d)
+                lock (scaled)
                 {
+                    var d = ScaledFor(img);
                     var key = (w, h, rr, circle);
                     if (!d.TryGetValue(key, out b))
                     {
-                        if (d.Count >= 6) { foreach (var x in d.Values) x.Dispose(); d.Clear(); }
+                        if (d.Count >= 6) { foreach (var x in d.Values) { scaledPixels -= (long)x.Width * x.Height; x.Dispose(); } d.Clear(); }
                         b = new Bitmap(w, h, System.Drawing.Imaging.PixelFormat.Format32bppPArgb);
                         using (var bg = Graphics.FromImage(b))
                         {
@@ -262,6 +301,8 @@ namespace Aura
                             }
                         }
                         d[key] = b;
+                        scaledPixels += (long)w * h;
+                        TrimScaled(img);
                     }
                 }
             }

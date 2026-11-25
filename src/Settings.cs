@@ -41,6 +41,7 @@ namespace Aura
         [DataMember] public double Rate = 1;
         [DataMember] public bool Discord;
         [DataMember] public string DiscordApp = "";
+        [DataMember] public bool DiscordOwnCovers;
         [DataMember] public bool AutoSyncAll;           // time every song that has lyrics but no timings, in the background
         [DataMember] public string Separate = "transcribe";   // separate the vocals first: "transcribe", "always", "off"
         [DataMember] public string SongLanguage = "en";

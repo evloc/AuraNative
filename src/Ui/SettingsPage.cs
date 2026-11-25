@@ -14,7 +14,19 @@ namespace Aura
         public Action<string> ThemeChanged;
         static readonly string[] Swatches = { "#1688FF", "#7C5CFF", "#F72BD6", "#FF3B6B", "#FF6B35", "#FFB020", "#22C55E", "#14B8A6", "#06B6D4" };
 
-        public SettingsPage(IShell shell) { this.shell = shell; }
+        readonly System.Windows.Forms.Timer perfTick = new System.Windows.Forms.Timer { Interval = 1500 };
+        RectangleF perfCard;
+
+        public SettingsPage(IShell shell)
+        {
+            this.shell = shell;
+            Perf.Take();
+            // the Performance card updates itself (only that card is redrawn)
+            perfTick.Tick += (s, e) => { if (!Visible) return; Perf.Take(); if (perfCard.Height > 0) Invalidate(Rectangle.Round(new RectangleF(perfCard.X, perfCard.Y - Offset, perfCard.Width, perfCard.Height))); };
+            perfTick.Start();
+        }
+
+        protected override void Dispose(bool disposing) { if (disposing) perfTick.Dispose(); base.Dispose(disposing); }
         public void Reload() => Invalidate();
 
         float Card(Graphics g, float y, float h, string title, string sub, float subH = 40)
@@ -164,7 +176,7 @@ namespace Aura
             y += h + Theme.F(20);
 
             // ---- Discord
-            h = Theme.F(shell.Prefs.Discord ? 236 : 190);
+            h = Theme.F(shell.Prefs.Discord ? 330 : 190);
             x = Card(g, y, h, "Discord status", "Shows \"Listening to\" the song you're playing on your Discord profile, while Discord is open on this PC. Discord needs an Application ID: make a free app at discord.com/developers/applications (name it AURA — that name is what people see), then copy its Application ID here.", 60);
             float dy = y + Theme.F(124);
             Toggle(g, "dsc", x, dy, cw - Theme.F(44), "Show what I'm listening to on Discord", shell.Prefs.Discord, () =>
@@ -178,6 +190,14 @@ namespace Aura
                 dy += Theme.F(44);
                 float dx = Pill(g, "dscid", x, dy, shell.Prefs.DiscordApp.Length > 0 ? "Application ID: " + shell.Prefs.DiscordApp : "Add the Application ID", () => { AskDiscordId(); shell.Prefs.Save(); mf?.ApplyDiscord(); Invalidate(); }, false, "edit", 32).Right + Theme.F(12);
                 Theme.Write(g, mf?.DiscordStatus ?? "", Theme.Font(13), Theme.Faint, new RectangleF(dx, dy, cw - (dx - x) - Theme.F(44), Theme.F(32)));
+                dy += Theme.F(46);
+                Toggle(g, "dscown", x, dy, cw - Theme.F(44), "Show my own covers — each cover is uploaded once to catbox.moe (a free picture site) so Discord can show it", shell.Prefs.DiscordOwnCovers, () =>
+                {
+                    shell.Prefs.DiscordOwnCovers = !shell.Prefs.DiscordOwnCovers; shell.Prefs.Save(); mf?.ApplyDiscord(); Invalidate();
+                });
+                Theme.Write(g, shell.Prefs.DiscordOwnCovers ? "Anyone with a cover's link can see that picture. Songs without a cover show the AURA logo."
+                    : "Off: Discord shows the cover from Apple Music when it's the very same song and picture, otherwise the AURA logo.",
+                    Theme.Font(12.5f), Theme.Faint, new RectangleF(x + Theme.F(56), dy + Theme.F(34), cw - Theme.F(100), Theme.F(22)));
             }
             y += h + Theme.F(20);
 
@@ -216,6 +236,41 @@ namespace Aura
             }
             Theme.Write(g, Separator.Ready ? "Uses the MDX-Net vocal model (" + Separator.SizeText + ", downloaded)." : "Uses the MDX-Net vocal model — it downloads once (about 65 MB) the first time it's needed. Helps a lot with loud music.", Theme.Font(12.5f), Theme.Faint, new RectangleF(x, wy + Theme.F(38), cw - Theme.F(44), Theme.F(22)));
             y += h + Theme.F(20);
+
+            // ---- performance: what AURA is using right now, and which part of it
+            {
+                var ps = Perf.Last;
+                var parts = ps?.Parts ?? new System.Collections.Generic.List<(string part, double cpu)>();
+                h = Theme.F(150) + Math.Max(1, Math.Min(7, parts.Count)) * Theme.F(26);
+                x = Card(g, y, h, "Performance", "What AURA is using right now. If it ever seems slow, press Copy report and send it over.");
+                perfCard = new RectangleF(0, y, Width, h);
+                float py = y + Theme.F(84);
+                string line = ps == null ? "Measuring…" : "Processor " + ps.Cpu.ToString("0.0") + "%   ·   Memory " + Perf.Mb(ps.Private) + "   ·   covers kept ready " + Perf.Mb(Theme.ScaledBytes);
+                Theme.Write(g, line, Theme.Font(14, FontStyle.Regular, true), Theme.Text, new RectangleF(x, py, cw - Theme.F(200), Theme.F(26)));
+                var mf2 = FindForm() as MainForm;
+                Pill(g, "perfcopy", x + cw - Theme.F(44) - PillWidth(g, "Copy report"), py - Theme.F(4), "Copy report", () =>
+                {
+                    if (mf2 == null) return;
+                    Perf.Take();
+                    var rep = Perf.Report(mf2);
+                    try { System.Windows.Forms.Clipboard.SetText(rep); shell.Toast("Report copied — paste it in a message"); }
+                    catch { shell.Toast("Couldn't copy the report"); }
+                    try { System.IO.File.WriteAllText(System.IO.Path.Combine(App.DataDir, "performance.txt"), rep); } catch { }
+                }, false, null, 32);
+                py += Theme.F(34);
+                if (App.IsWindows)
+                    foreach (var (part, cpu) in parts.Take(7))
+                    {
+                        float bw = cw - Theme.F(44) - Theme.F(330);
+                        Theme.Write(g, part, Theme.Font(12.5f), Theme.Sub, new RectangleF(x, py, Theme.F(270), Theme.F(22)));
+                        Theme.Fill(g, Theme.Surface2, new RectangleF(x + Theme.F(280), py + Theme.F(8), bw, Theme.F(6)), Theme.F(3));
+                        Theme.Fill(g, Theme.Accent, new RectangleF(x + Theme.F(280), py + Theme.F(8), Math.Max(Theme.F(2), bw * (float)Math.Min(1, cpu / 25)), Theme.F(6)), Theme.F(3));
+                        Theme.Write(g, cpu.ToString("0.0") + "%", Theme.Font(12.5f), Theme.Faint, new RectangleF(x + Theme.F(290) + bw, py, Theme.F(60), Theme.F(22)));
+                        py += Theme.F(26);
+                    }
+                else Theme.Write(g, "The parts are only measured on Windows.", Theme.Font(12.5f), Theme.Faint, new RectangleF(x, py, cw, Theme.F(22)));
+                y += h + Theme.F(20);
+            }
 
             // ---- undo
             var steps = shell.Lib.UndoSteps().Take(6).ToList();

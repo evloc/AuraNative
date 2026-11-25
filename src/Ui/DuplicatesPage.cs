@@ -28,6 +28,7 @@ namespace Aura
             heardAtLook = shell.Sound.Done;
             new Thread(() =>
             {
+                Perf.Here("finding duplicates");
                 List<DupGroup> found;
                 try { found = Duplicates.Find(shell.Lib, shell.Sound, s => ctx.Post(_ => { status = s; Invalidate(); }, null)); }
                 catch (Exception e) { App.Log("duplicates: " + e); found = new List<DupGroup>(); ctx.Post(_ => shell.Toast("Couldn't look for duplicates: " + e.Message), null); }

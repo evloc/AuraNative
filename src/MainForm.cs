@@ -31,6 +31,7 @@ namespace Aura
         public MainForm(Library lib, Player player, Settings prefs)
         {
             Lib = lib; Player = player; Prefs = prefs;
+            Perf.Here("the window (drawing pages, the player)");
             Lyrics = new LyricsStore(lib);
             Lyrics.Changed += id =>
             {

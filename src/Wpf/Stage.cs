@@ -333,8 +333,10 @@ namespace Aura.Wpf
 
         void Frame(object sender, EventArgs e)
         {
+            double now = clock.Elapsed.TotalSeconds;
+            if (now - last < 1 / 121.0) return;          // up to 120 frames a second; more only costs power
             var sw = System.Diagnostics.Stopwatch.StartNew();
-            double now = clock.Elapsed.TotalSeconds, dt = Math.Max(0.001, Math.Min(0.1, now - last));
+            double dt = Math.Max(0.001, Math.Min(0.1, now - last));
             last = now;
             try { Step(now, dt); }
             catch (Exception x) { App.Log("full screen: " + x); }

@@ -17,6 +17,9 @@ namespace Aura
         static string dir;
         static readonly Dictionary<long, Bitmap> mem = new Dictionary<long, Bitmap>();
         static readonly LinkedList<long> lru = new LinkedList<long>();
+        static readonly Dictionary<long, LinkedListNode<long>> lruNode = new Dictionary<long, LinkedListNode<long>>();
+        const int Keep = 300;
+        public static int InMemory => mem.Count;
         static readonly HashSet<long> none = new HashSet<long>();
         static readonly List<(long id, string path, double mtime, bool hasArt)> want = new List<(long, string, double, bool)>();
         static readonly HashSet<long> queued = new HashSet<long>();
@@ -59,11 +62,17 @@ namespace Aura
 
         public static void Forget(long id)
         {
-            if (mem.TryGetValue(id, out var b)) { mem.Remove(id); lru.Remove(id); b.Dispose(); }
+            if (mem.TryGetValue(id, out var b)) { mem.Remove(id); Unlink(id); Theme.ForgetScaled(b); b.Dispose(); }
             none.Remove(id);
         }
 
-        static void Touch(long id) { lru.Remove(id); lru.AddFirst(id); }
+        // (a covers list is touched for every cover drawn, every frame: this has to be instant)
+        static void Touch(long id)
+        {
+            if (lruNode.TryGetValue(id, out var n)) { if (n != lru.First) { lru.Remove(n); lru.AddFirst(n); } }
+            else lruNode[id] = lru.AddFirst(id);
+        }
+        static void Unlink(long id) { if (lruNode.TryGetValue(id, out var n)) { lru.Remove(n); lruNode.Remove(id); } }
 
         static void Store(long id, Bitmap b)
         {
@@ -71,15 +80,16 @@ namespace Aura
             if (b == null) none.Add(id);
             else
             {
-                if (mem.TryGetValue(id, out var old)) old.Dispose();
+                if (mem.TryGetValue(id, out var old)) { Theme.ForgetScaled(old); old.Dispose(); }
                 mem[id] = b; Touch(id);
-                while (lru.Count > 500) { var last = lru.Last.Value; lru.RemoveLast(); if (mem.TryGetValue(last, out var x)) { mem.Remove(last); x.Dispose(); } }
+                while (lru.Count > Keep) { var last = lru.Last.Value; Unlink(last); if (mem.TryGetValue(last, out var x)) { mem.Remove(last); Theme.ForgetScaled(x); x.Dispose(); } }
             }
             Ready?.Invoke(id);
         }
 
         static void Worker()
         {
+            Perf.Here("covers");
             while (true)
             {
                 (long id, string path, double mtime, bool hasArt) job;
