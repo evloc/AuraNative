@@ -733,6 +733,12 @@ namespace Aura
             else { firstScan = false; AfterFirstScan(); }
             Lyrics.StartAuto(() => Prefs.AutoLyrics);
             StartMore();
+            if (CrashGuard.LastTime != null)
+            {
+                var later = new Timer { Interval = 2500 };
+                later.Tick += (s, e) => { later.Stop(); later.Dispose(); Toast("AURA closed unexpectedly last time. What it was doing is saved in Settings → Performance → Copy report."); };
+                later.Start();
+            }
             if (Prefs.CheckUpdates && Environment.GetEnvironmentVariable("AURA_NO_UPDATE_CHECK") == null)
             {
                 var once = new Timer { Interval = 6000 };

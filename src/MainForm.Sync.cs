@@ -154,10 +154,12 @@ namespace Aura
                         {
                             var lines = LinesOf(lyr);
                             // never the vocal model here: that's another gigabyte or two, for every song
+                            CrashGuard.Doing("timing lyrics", next.Name + " (reading the song)");
                             var pcm = Hearing.Pcm(next, false, (s2, k) => { }, () => autoSyncStop, out _);
                             var prompt = string.Join(" ", lines); if (prompt.Length > 220) prompt = prompt.Substring(0, 220);
                             // one core while music plays, two when it doesn't: the music and the screen come first
                             int threads = Player.IsPlaying ? 1 : 2;
+                            CrashGuard.Doing("timing lyrics", next.Name + " (speech model " + System.IO.Path.GetFileName(m.File) + ", " + threads + " thread" + (threads == 1 ? "" : "s") + ")");
                             var heard = Whisper.Listen(m.File, m.Dtw, pcm, "auto", prompt, 1, null, () => autoSyncStop || TranscribeOpen || FullScreenOpen, out _, threads);
                             var r = Sync.Align(lines, heard);
                             // lyrics that were already timed by line are only replaced by a sure match
@@ -170,8 +172,9 @@ namespace Aura
                                 ok = true; done++;
                             }
                         }
-                        catch (OperationCanceledException) { if (autoSyncStop) break; todo.Enqueue(next.Id); Thread.Sleep(5000); continue; }   // full screen opened: do it later
+                        catch (OperationCanceledException) { CrashGuard.Doing("timing lyrics", null); if (autoSyncStop) break; todo.Enqueue(next.Id); Thread.Sleep(5000); continue; }   // full screen opened: do it later
                         catch (Exception e) { App.Log("auto-sync " + next.Name + ": " + e.Message); }
+                        CrashGuard.Doing("timing lyrics", null);
                         Lib.Db.Exec("INSERT OR REPLACE INTO autosync_tried (track_id,ts,ok) VALUES (?,?,?)", next.Id, Library.Now, ok ? 1 : 0);
                         // rest as long as the work took
                         for (long w = Math.Min(60000, Math.Max(2000, took.ElapsedMilliseconds)); w > 0 && !autoSyncStop; w -= 500) Thread.Sleep(500);

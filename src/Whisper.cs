@@ -128,6 +128,13 @@ namespace Aura
         // what was sung, word by word
         public static List<Heard> Listen(string modelFile, int dtw, float[] pcm16k, string lang, string prompt, int beam, Action<double> progress, Func<bool> cancelled, out string detected, int maxThreads = 8)
         {
+            CrashGuard.Doing("speech model", Path.GetFileName(modelFile) + ", " + (pcm16k.Length / 16000) + " s of sound, beam " + beam);
+            try { return ListenNow(modelFile, dtw, pcm16k, lang, prompt, beam, progress, cancelled, out detected, maxThreads); }
+            finally { CrashGuard.Doing("speech model", null); }
+        }
+
+        static List<Heard> ListenNow(string modelFile, int dtw, float[] pcm16k, string lang, string prompt, int beam, Action<double> progress, Func<bool> cancelled, out string detected, int maxThreads)
+        {
             detected = "";
             if (!Load()) throw new InvalidOperationException(LoadError);
             if (Environment.GetEnvironmentVariable("AURA_WHISPER_NODTW") != null) dtw = 0;     // test models don't match the real presets

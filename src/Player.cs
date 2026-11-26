@@ -192,6 +192,7 @@ namespace Aura
             listened = 0; lastPos = 0; counted = false;
             if (play) { audio.Play(); State = PlayState.Playing; }
             else State = PlayState.Paused;
+            CrashGuard.Doing("playing", t.Name + " (" + audio.Name + ")");
             TrackChanged?.Invoke();
             StateChanged?.Invoke();
         }
@@ -236,6 +237,7 @@ namespace Aura
                 App.Log("trying " + next.Name + " for " + t.Path);
                 if (!next.Load(playPath ?? t.Path)) continue;
                 audio = next;
+                CrashGuard.Doing("playing", t.Name + " (" + audio.Name + ")");
                 ApplyVolume(t); audio.Rate = Rate;
                 if (play) audio.Play();
                 return true;

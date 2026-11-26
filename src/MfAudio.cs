@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 
@@ -148,13 +150,49 @@ namespace Aura
                 if (engine == null) Make();
                 wantPlay = false; started_ = false; pending = -1;
                 notify.Error = notify.Ended = notify.Playing = false;
-                var url = new Uri(path).AbsoluteUri;
-                int hr = engine.SetSource(url);
-                if (hr < 0) { App.Log("Media Foundation couldn't open " + path + " (0x" + hr.ToString("X8") + ")"); return false; }
-                engine.Load();
-                return true;
+                sources = Sources(path); source = 0;
+                return Open();
             }
             catch (Exception e) { App.Log("Media Foundation couldn't open " + path + ": " + e.Message); return false; }
+        }
+
+        // Ways to name the file to Media Foundation, best first. A name with a curly apostrophe or an accent
+        // (Life’s a Mess.mp3, Murciélago.mp3) can fail as a web address on some PCs, so those also get
+        // the old-style short name (all plain letters) and the plain path.
+        List<string> sources = new List<string>(); int source;
+        static List<string> Sources(string path)
+        {
+            var list = new List<string>();
+            bool plain = path.All(c => c < 128);
+            if (!plain && Win.ShortPath(path) is string sp && sp.All(c => c < 128)) list.Add(new Uri(sp).AbsoluteUri);
+            try { list.Add(new Uri(path).AbsoluteUri); } catch { }
+            if (!plain) list.Add(path);
+            return list.Distinct().ToList();
+        }
+
+        bool Open()
+        {
+            while (source < sources.Count)
+            {
+                int hr = engine.SetSource(sources[source]);
+                if (hr >= 0) { engine.Load(); return true; }
+                App.Log("Media Foundation couldn't open " + sources[source] + " (0x" + hr.ToString("X8") + ")");
+                source++;
+            }
+            return false;
+        }
+
+        // the song didn't start: try the next way of naming it before giving up on this engine
+        bool TryNextSource()
+        {
+            if (started_ || source + 1 >= sources.Count) return false;
+            source++;
+            App.Log("Media Foundation: trying " + sources[source]);
+            bool play = wantPlay;
+            notify.Error = notify.Ended = notify.Playing = false;
+            if (!Open()) return false;
+            if (play) { sincePlay.Restart(); try { engine.Play(); } catch { } }
+            return true;
         }
 
         public void Play() { wantPlay = true; sincePlay.Restart(); try { if (rate != 1) { engine?.SetDefaultPlaybackRate(rate); engine?.SetPlaybackRate(rate); } engine?.Play(); } catch { } }
@@ -196,7 +234,12 @@ namespace Aura
             {
                 if (notify.Error || (engine.GetError(out var err) >= 0 && err != IntPtr.Zero && Release(err)))
                 {
-                    if (wantPlay || !started_) { App.Log("Media Foundation: couldn't play (event " + notify.LastEvent + ")"); return wantPlay ? PlayState.Failed : PlayState.Stopped; }
+                    if (wantPlay || !started_)
+                    {
+                        App.Log("Media Foundation: couldn't play (event " + notify.LastEvent + ")");
+                        if (TryNextSource()) return wantPlay ? PlayState.Playing : PlayState.Stopped;
+                        return wantPlay ? PlayState.Failed : PlayState.Stopped;
+                    }
                 }
                 int ready = engine.GetReadyState();
                 if (pending >= 0 && ready >= 1) { engine.SetCurrentTime(pending); pending = -1; }

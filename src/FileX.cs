@@ -35,9 +35,12 @@ namespace Aura
             new FileStream(Long(path), FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, buffer);
 
         // what to hand to Windows' player engines: a short path when the real one would confuse them
+        // only plain letters: a curly apostrophe or an accent (Life’s, Murciélago) trips some of Windows' players
+        public static bool Plain(string path) { foreach (var c in path) if (c >= 128) return false; return true; }
+
         public static string ForPlayer(string path)
         {
-            bool odd = Awkward(path) || path.IndexOfAny(new[] { '#', '%', ';' }) >= 0;
+            bool odd = Awkward(path) || path.IndexOfAny(new[] { '#', '%', ';' }) >= 0 || !Plain(path);
             if (!odd) return path;
             return Win.ShortPath(path) ?? path;
         }

@@ -242,6 +242,13 @@ namespace Aura
         // the singing on its own: mono at 16 kHz (for Whisper). Throws when it can't be done well.
         public static float[] Vocals(string path, long id, double length, double maxSeconds, Action<double> progress, Func<bool> cancelled)
         {
+            CrashGuard.Doing("taking out vocals", Path.GetFileName(path));
+            try { return VocalsNow(path, id, length, maxSeconds, progress, cancelled); }
+            finally { CrashGuard.Doing("taking out vocals", null); }
+        }
+
+        static float[] VocalsNow(string path, long id, double length, double maxSeconds, Action<double> progress, Func<bool> cancelled)
+        {
             if (!Load()) throw new InvalidOperationException(LoadError);
             if (!ModelReady) Download(p => progress?.Invoke(-1 - p), cancelled);
             using (var s = Open())

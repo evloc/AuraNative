@@ -128,6 +128,7 @@ namespace Aura
             Current = tw.Track;
             playPath = tw.Track.Path;
             listened = 0; lastPos = audio.Position; counted = false; failsInRow = 0;
+            CrashGuard.Doing("playing", tw.Track.Name + " (" + audio.Name + ")");
             State = PlayState.Playing;
             ApplyVolume();
             TrackChanged?.Invoke(); StateChanged?.Invoke(); QueueChanged?.Invoke();

@@ -115,7 +115,12 @@ namespace Aura
         public static void Read(string path, Action<float[], int, int, int> block, Func<bool> cancelled)
         {
             Start();
-            Check(MFCreateSourceReaderFromURL(new Uri(path).AbsoluteUri, IntPtr.Zero, out var reader), "Windows couldn't open the song");
+            var sp = FileX.Plain(path) ? null : Win.ShortPath(path);
+            if (sp != null && FileX.Plain(sp)) path = sp;
+            IMFSourceReader reader;
+            int hr = MFCreateSourceReaderFromURL(new Uri(path).AbsoluteUri, IntPtr.Zero, out reader);
+            if (hr < 0 && !FileX.Plain(path)) hr = MFCreateSourceReaderFromURL(path, IntPtr.Zero, out reader);
+            Check(hr, "Windows couldn't open the song");
             IMFMediaType want = null, got = null;
             try
             {

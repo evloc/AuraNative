@@ -97,6 +97,19 @@ namespace Aura
                 b.AppendLine("Screen: " + System.Windows.Forms.Screen.FromControl(f).Bounds.Size + " at " + (Theme.S * 100).ToString("0") + "%");
             }
             catch (Exception e) { b.AppendLine("(" + e.Message + ")"); }
+            try
+            {
+                b.AppendLine("Doing now: " + (CrashGuard.Now.Length > 0 ? CrashGuard.Now : "-"));
+                if (CrashGuard.LastTime != null) b.AppendLine("Closed without warning last time, while: " + CrashGuard.LastTime.Replace(Environment.NewLine, "; "));
+                var log = System.IO.Path.Combine(App.DataDir, "error.log");
+                if (System.IO.File.Exists(log))
+                {
+                    var lines = System.IO.File.ReadAllLines(log);
+                    var crashes = lines.Where(l => l.Contains("  crash") || l.Contains("closed without warning")).Reverse().Take(4).Reverse().ToList();
+                    if (crashes.Count > 0) { b.AppendLine("Recent crashes:"); foreach (var l in crashes) b.AppendLine("  " + (l.Length > 600 ? l.Substring(0, 600) + "…" : l)); }
+                }
+            }
+            catch { }
             return b.ToString();
         }
     }

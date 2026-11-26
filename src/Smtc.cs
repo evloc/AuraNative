@@ -5,6 +5,27 @@ namespace Aura
 {
     // Windows' media controls: the box that pops up with the volume keys, and the lock screen.
     // (System Media Transport Controls, reached from a normal window through its "interop" door.)
+    // (these two must be public and outside any other class: COM can only call into types it can see)
+    // TypedEventHandler<SystemMediaTransportControls, SystemMediaTransportControlsButtonPressedEventArgs>
+    [ComVisible(true), Guid("0557e996-7b23-5bae-aa81-ea0d671143a4"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    public interface ISmtcPressedHandler { void Invoke(IntPtr sender, IntPtr args); }
+
+    [ComVisible(true), ClassInterface(ClassInterfaceType.None)]
+    public sealed class SmtcHandler : ISmtcPressedHandler
+    {
+        public Action<int> OnButton;
+        public void Invoke(IntPtr sender, IntPtr args)
+        {
+            try
+            {
+                var a = (Smtc.IPressed)Marshal.GetObjectForIUnknown(args);
+                if (a.get_Button(out int b) >= 0) OnButton?.Invoke(b);
+                Marshal.ReleaseComObject(a);
+            }
+            catch (Exception e) { App.Log("media controls: " + e.Message); }
+        }
+    }
+
     sealed class Smtc : IDisposable
     {
         [DllImport("combase.dll", PreserveSig = true)] static extern int WindowsCreateString([MarshalAs(UnmanagedType.LPWStr)] string s, int len, out IntPtr h);
@@ -60,7 +81,7 @@ namespace Aura
         }
 
         [ComImport, Guid("b7f47116-a56f-4dc8-9e11-92031f4a87c2"), InterfaceType(ComInterfaceType.InterfaceIsIInspectable)]
-        interface IPressed { [PreserveSig] int get_Button(out int v); }
+        internal interface IPressed { [PreserveSig] int get_Button(out int v); }
 
         [ComImport, Guid("857309dc-3fbf-4e7d-986f-ef3b1a07a964"), InterfaceType(ComInterfaceType.InterfaceIsIInspectable)]
         interface IStreamRefStatics
@@ -70,30 +91,10 @@ namespace Aura
             [PreserveSig] int CreateFromStream(IntPtr stream, out IntPtr r);
         }
 
-        // TypedEventHandler<SystemMediaTransportControls, SystemMediaTransportControlsButtonPressedEventArgs>
-        [ComVisible(true), Guid("0557e996-7b23-5bae-aa81-ea0d671143a4"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-        public interface IPressedHandler { void Invoke(IntPtr sender, IntPtr args); }
-
-        [ComVisible(true), ClassInterface(ClassInterfaceType.None)]
-        public sealed class Handler : IPressedHandler
-        {
-            public Action<int> OnButton;
-            public void Invoke(IntPtr sender, IntPtr args)
-            {
-                try
-                {
-                    var a = (IPressed)Marshal.GetObjectForIUnknown(args);
-                    if (a.get_Button(out int b) >= 0) OnButton?.Invoke(b);
-                    Marshal.ReleaseComObject(a);
-                }
-                catch (Exception e) { App.Log("media controls: " + e.Message); }
-            }
-        }
-
         IControls controls;
         IDisplay display;
         IMusic music;
-        IntPtr handlerPtr; long token; Handler handler;
+        IntPtr handlerPtr; long token; SmtcHandler handler;
         public bool Working => controls != null;
 
         public const int Play = 0, Pause = 1, Stop = 2, Next = 6, Previous = 7;
@@ -133,8 +134,8 @@ namespace Aura
             controls.put_PlaybackStatus(2);
             if (controls.get_DisplayUpdater(out var d) >= 0) { display = (IDisplay)Marshal.GetObjectForIUnknown(d); Marshal.Release(d); }
             if (display != null && display.put_Type(1) >= 0 && display.get_MusicProperties(out var m) >= 0) { music = (IMusic)Marshal.GetObjectForIUnknown(m); Marshal.Release(m); }
-            handler = new Handler { OnButton = onButton };
-            handlerPtr = Marshal.GetComInterfaceForObject(handler, typeof(IPressedHandler));
+            handler = new SmtcHandler { OnButton = onButton };
+            handlerPtr = Marshal.GetComInterfaceForObject(handler, typeof(ISmtcPressedHandler));
             hr = controls.add_ButtonPressed(handlerPtr, out token);
             if (hr < 0) App.Log("media controls: buttons not connected (0x" + hr.ToString("X8") + ")");
         }

@@ -565,6 +565,7 @@ namespace Aura
                     continue;
                 }
                 Current = t.Name;
+                CrashGuard.Doing("listening to", t.Name);
                 var sw = Stopwatch.StartNew();
                 try
                 {
@@ -579,6 +580,7 @@ namespace Aura
                     lock (gate) failedRecently.Add(t.Id);
                 }
                 Current = "";
+                CrashGuard.Doing("listening to", null);
                 var id = t.Id;
                 if (ui != null) ui.Post(_ => Ready?.Invoke(id), null);
                 // the big sample arrays of each song would otherwise pile up in memory over a whole library

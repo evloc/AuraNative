@@ -143,8 +143,8 @@ namespace Aura.Wpf
             MouseMove += (s, e) => { var p = e.GetPosition(this); if ((p - lastMouse).Length > 2) { lastMouse = p; Poke(); } };
             MouseDoubleClick += (s, e) => { if (e.OriginalSource == root || e.OriginalSource == scene || e.OriginalSource is Image im && (im == skyA || im == skyB)) Close(); };
             MouseLeftButtonUp += (s, e) => { if (dragSeek || dragVol) { dragSeek = dragVol = false; ReleaseMouseCapture(); } };
-            Open++;
-            Closed += (s, e) => { Open--; CompositionTarget.Rendering -= Frame; Mouse.OverrideCursor = null; song?.Dispose(); };
+            Open++; CrashGuard.Doing("full screen", "open");
+            Closed += (s, e) => { Open--; if (Open == 0) CrashGuard.Doing("full screen", null); CompositionTarget.Rendering -= Frame; Mouse.OverrideCursor = null; song?.Dispose(); };
             CompositionTarget.Rendering += Frame;
         }
 

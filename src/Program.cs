@@ -53,6 +53,7 @@ namespace Aura
             Application.SetCompatibleTextRenderingDefault(false);
             Application.ThreadException += (s, e) => Crash(e.Exception);
             AppDomain.CurrentDomain.UnhandledException += (s, e) => Crash(e.ExceptionObject as Exception);
+            CrashGuard.Start();
             try { using (var g = Graphics.FromHwnd(IntPtr.Zero)) Theme.S = Math.Max(1f, g.DpiX / 96f); } catch { }
 
             var prefs = Settings.Load();
@@ -84,6 +85,7 @@ namespace Aura
             if (script != null) UiTest.Attach(form, script, Arg(args, "--out"));
 #endif
             Application.Run(form);
+            CrashGuard.Stop();
             player.Dispose();
             lib.Db.Dispose();
             return 0;
@@ -92,7 +94,7 @@ namespace Aura
         static bool crashed;
         static void Crash(Exception e)
         {
-            App.Log("crash: " + e);
+            App.Log("crash: " + e + Environment.NewLine + "    AURA was: " + CrashGuard.Now);
             if (crashed) return;
             crashed = true;
             try { MessageBox.Show("Something went wrong in AURA. It has been written to error.log in " + App.DataDir + ".\n\n" + e?.Message, "AURA", MessageBoxButtons.OK, MessageBoxIcon.Warning); } catch { }
