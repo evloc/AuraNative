@@ -24,6 +24,7 @@ namespace Aura
             bool test = args.Contains("--test-audio");
             App.Init(data);
 
+            if (args.Contains("--listen-helper")) return Whisper.Helper(Arg(args, "--listen-helper"));
             if (args.Contains("--selftest")) return SelfTest();
             if (args.Contains("--vocals")) return VocalsCli(Arg(args, "--vocals"), Arg(args, "--out"));
 

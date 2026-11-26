@@ -129,11 +129,141 @@ namespace Aura
         public static List<Heard> Listen(string modelFile, int dtw, float[] pcm16k, string lang, string prompt, int beam, Action<double> progress, Func<bool> cancelled, out string detected, int maxThreads = 8)
         {
             CrashGuard.Doing("speech model", Path.GetFileName(modelFile) + ", " + (pcm16k.Length / 16000) + " s of sound, beam " + beam);
-            try { return ListenNow(modelFile, dtw, pcm16k, lang, prompt, beam, progress, cancelled, out detected, maxThreads); }
+            try
+            {
+                // In a helper copy of AURA, so that if whisper.cpp crashes on a song (it has, on some songs, every
+                // time), only the helper closes — the music and the window carry on.
+                if (Environment.GetEnvironmentVariable("AURA_WHISPER_INPROC") == null)
+                    return ListenApart(modelFile, dtw, pcm16k, lang, prompt, beam, progress, cancelled, out detected, maxThreads);
+                return ListenNow(modelFile, dtw, pcm16k, lang, prompt, beam, progress, cancelled, out detected, maxThreads);
+            }
             finally { CrashGuard.Doing("speech model", null); }
         }
 
+        // ---------- the helper ----------
+        public sealed class HelperCrashed : IOException { public HelperCrashed(string m) : base(m) { } }
+
+        static List<Heard> ListenApart(string modelFile, int dtw, float[] pcm, string lang, string prompt, int beam, Action<double> progress, Func<bool> cancelled, out string detected, int maxThreads)
+        {
+            detected = "";
+            if (!Load()) throw new InvalidOperationException(LoadError);
+            var req = Path.Combine(Path.GetTempPath(), "aura-listen-" + Guid.NewGuid().ToString("N") + ".bin");
+            var outFile = req + ".out";
+            try
+            {
+                using (var w = new BinaryWriter(new FileStream(req, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 16)))
+                {
+                    w.Write(modelFile); w.Write(dtw); w.Write(lang ?? "auto"); w.Write(prompt ?? ""); w.Write(beam); w.Write(maxThreads);
+                    w.Write(System.Diagnostics.Process.GetCurrentProcess().Id);
+                    w.Write(pcm.Length);
+                    var buf = new byte[pcm.Length * 4];
+                    Buffer.BlockCopy(pcm, 0, buf, 0, buf.Length);
+                    w.Write(buf);
+                }
+                var exe = System.Reflection.Assembly.GetEntryAssembly().Location;
+                bool mono = Type.GetType("Mono.Runtime") != null;
+                var psi = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = mono ? "mono" : exe,
+                    Arguments = (mono ? "\"" + exe + "\" " : "") + "--listen-helper \"" + req + "\"" + (App.DataArg != null ? " --data \"" + App.DataArg + "\"" : ""),
+                    UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true,
+                };
+                using (var p = System.Diagnostics.Process.Start(psi))
+                {
+                    try { p.PriorityClass = System.Diagnostics.ProcessPriorityClass.BelowNormal; } catch { }      // the music and the window come first
+                    p.ErrorDataReceived += (s, e) => { };
+                    p.BeginErrorReadLine();
+                    var reader = new Thread(() =>
+                    {
+                        try
+                        {
+                            string line;
+                            while ((line = p.StandardOutput.ReadLine()) != null)
+                                if (line.StartsWith("p ") && int.TryParse(line.Substring(2), out var pc)) progress?.Invoke(pc / 100.0);
+                        }
+                        catch { }
+                    }) { IsBackground = true, Name = "speech helper" };
+                    reader.Start();
+                    while (!p.WaitForExit(200))
+                    {
+                        if (cancelled != null && cancelled())
+                        {
+                            try { p.Kill(); p.WaitForExit(3000); } catch { }
+                            throw new OperationCanceledException();
+                        }
+                    }
+                    p.WaitForExit();
+                    reader.Join(2000);
+                    if (cancelled != null && cancelled()) throw new OperationCanceledException();
+                    int code = p.ExitCode;
+                    if (code != 0 || !System.IO.File.Exists(outFile))
+                    {
+                        string err = System.IO.File.Exists(outFile) ? System.IO.File.ReadAllText(outFile).Trim() : "";
+                        if (code == 2 && err.Length > 0) throw new IOException(err);
+                        throw new HelperCrashed("the speech model crashed on this song (code 0x" + code.ToString("X8") + ")");
+                    }
+                    var all = System.IO.File.ReadAllText(outFile, Encoding.UTF8);
+                    int nl = all.IndexOf('\n');
+                    detected = nl < 0 ? all.Trim() : all.Substring(0, nl).Trim();
+                    return Words(nl < 0 ? "" : all.Substring(nl + 1));
+                }
+            }
+            finally
+            {
+                try { System.IO.File.Delete(req); } catch { }
+                try { System.IO.File.Delete(outFile); } catch { }
+            }
+        }
+
+        // runs in the helper copy of AURA: exit 0 = done, 2 = a plain error (written to the .out file)
+        public static int Helper(string req)
+        {
+            var outFile = req + ".out";
+            try
+            {
+                string model, lang, prompt; int dtw, beam, threads, parent; float[] pcm;
+                using (var r = new BinaryReader(new FileStream(req, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 16)))
+                {
+                    model = r.ReadString(); dtw = r.ReadInt32(); lang = r.ReadString(); prompt = r.ReadString();
+                    beam = r.ReadInt32(); threads = r.ReadInt32(); parent = r.ReadInt32();
+                    int n = r.ReadInt32();
+                    var bytes = r.ReadBytes(n * 4);
+                    pcm = new float[n];
+                    Buffer.BlockCopy(bytes, 0, pcm, 0, bytes.Length);
+                }
+#if TESTHOOKS
+                if (Environment.GetEnvironmentVariable("AURA_TEST_SPEECH_CRASH") != null) Environment.FailFast("test: the speech model crashes");
+#endif
+                // stop when AURA itself has closed
+                System.Diagnostics.Process owner = null;
+                try { owner = System.Diagnostics.Process.GetProcessById(parent); } catch { }
+                var check = System.Diagnostics.Stopwatch.StartNew(); bool gone = false;
+                Func<bool> stop = () =>
+                {
+                    if (gone) return true;
+                    if (owner != null && check.ElapsedMilliseconds > 1000) { check.Restart(); try { gone = owner.HasExited; } catch { } }
+                    return gone;
+                };
+                int last = -1;
+                var raw = RunRaw(model, dtw, pcm, lang, prompt, beam, p => { int pc = (int)(p * 100); if (pc != last) { last = pc; Console.Out.WriteLine("p " + pc); Console.Out.Flush(); } }, stop, out var detected, threads);
+                if (gone) return 3;
+                System.IO.File.WriteAllText(outFile, detected + "\n" + raw, new UTF8Encoding(false));
+                return 0;
+            }
+            catch (Exception e)
+            {
+                try { System.IO.File.WriteAllText(outFile, e.Message); } catch { }
+                return 2;
+            }
+        }
+
         static List<Heard> ListenNow(string modelFile, int dtw, float[] pcm16k, string lang, string prompt, int beam, Action<double> progress, Func<bool> cancelled, out string detected, int maxThreads)
+        {
+            var raw = RunRaw(modelFile, dtw, pcm16k, lang, prompt, beam, progress, cancelled, out detected, maxThreads);
+            return Words(raw);
+        }
+
+        static string RunRaw(string modelFile, int dtw, float[] pcm16k, string lang, string prompt, int beam, Action<double> progress, Func<bool> cancelled, out string detected, int maxThreads)
         {
             detected = "";
             if (!Load()) throw new InvalidOperationException(LoadError);
@@ -150,7 +280,7 @@ namespace Aura
                 if (cancelled != null && cancelled()) throw new OperationCanceledException();
                 if (rc != 0) throw new IOException("speech recognition failed (code " + rc + ")");
                 detected = Utf8(language(h));
-                return Words(Utf8(result(h)));
+                return Utf8(result(h));
             }
             finally { close(h); }
         }

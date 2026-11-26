@@ -148,6 +148,7 @@
   AURA's converter), it stays the same song with its plays and playlists.
 - **Updates itself** — when a new version is on GitHub, an Update button shows
   at the top; AURA installs it and opens again.
+- **Speech runs on its own** — the speech model (timing and writing down lyrics) runs in a separate helper, so if it ever crashes on a song, only the helper closes; the music keeps playing and that song is skipped from then on.
 - **Notes what went wrong** — if AURA ever closes without warning, the next start says so, and Settings → Performance → Copy report includes what it was doing at that moment (the song, the player engine, background work) and the error Windows gave.
 - **Picks up where you left off** — same song, same place, same queue.
 - **Brings over your first AURA** — on first start it takes your music

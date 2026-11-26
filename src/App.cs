@@ -18,8 +18,10 @@ namespace Aura
             }
         }
 
+        public static string DataArg;      // the --data folder AURA was started with (passed on to its helper)
         public static void Init(string dataOverride)
         {
+            DataArg = dataOverride;
             var appdata = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
             DataDir = dataOverride ?? Path.Combine(appdata, "AURA Native");
             OldDir = Environment.GetEnvironmentVariable("AURA_OLD_DIR") ?? Path.Combine(appdata, "Unreleased");

@@ -896,6 +896,17 @@ namespace Aura
                 Ok(l != null && l.Source == "In the song file", "a run that heard nothing doesn't touch the song's lyrics (" + l?.Source + ")");
                 return true;
             });
+            Step("speech model crash", () =>
+            {
+                // whisper.cpp crashing on a song must not take AURA (and the music) down with it
+                Environment.SetEnvironmentVariable("AURA_TEST_SPEECH_CRASH", "1");
+                Exception got = null;
+                try { Whisper.Listen(Whisper.Models[0].File, 0, new float[16000 * 3], "en", "", 1, null, () => false, out _); }
+                catch (Exception e) { got = e; }
+                finally { Environment.SetEnvironmentVariable("AURA_TEST_SPEECH_CRASH", null); }
+                Ok(got is Whisper.HelperCrashed, "when the speech model crashes, only its helper closes; AURA gets a plain error (" + got?.Message + ")");
+                return true;
+            });
             // taking the vocals out first (MDX-Net through onnxruntime), then writing the words down
             TranscribeForm tv = null;
             Step("vocals open", () =>

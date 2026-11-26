@@ -153,6 +153,8 @@ namespace Aura
                         try
                         {
                             var lines = LinesOf(lyr);
+                            // noted as tried before starting, so a song that brings something down isn't tried again and again
+                            Lib.Db.Exec("INSERT OR REPLACE INTO autosync_tried (track_id,ts,ok) VALUES (?,?,-1)", next.Id, Library.Now);
                             // never the vocal model here: that's another gigabyte or two, for every song
                             CrashGuard.Doing("timing lyrics", next.Name + " (reading the song)");
                             var pcm = Hearing.Pcm(next, false, (s2, k) => { }, () => autoSyncStop, out _);
@@ -172,7 +174,7 @@ namespace Aura
                                 ok = true; done++;
                             }
                         }
-                        catch (OperationCanceledException) { CrashGuard.Doing("timing lyrics", null); if (autoSyncStop) break; todo.Enqueue(next.Id); Thread.Sleep(5000); continue; }   // full screen opened: do it later
+                        catch (OperationCanceledException) { CrashGuard.Doing("timing lyrics", null); Lib.Db.Exec("DELETE FROM autosync_tried WHERE track_id=?", next.Id); if (autoSyncStop) break; todo.Enqueue(next.Id); Thread.Sleep(5000); continue; }   // full screen opened: do it later
                         catch (Exception e) { App.Log("auto-sync " + next.Name + ": " + e.Message); }
                         CrashGuard.Doing("timing lyrics", null);
                         Lib.Db.Exec("INSERT OR REPLACE INTO autosync_tried (track_id,ts,ok) VALUES (?,?,?)", next.Id, Library.Now, ok ? 1 : 0);
