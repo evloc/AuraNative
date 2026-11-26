@@ -13,7 +13,7 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <PlatformTarget>AnyCPU</PlatformTarget>
     <Prefer32Bit>false</Prefer32Bit>
-    <Version>0.5.0</Version>
+    <Version>0.5.1</Version>
     <Product>AURA Native</Product>
     <Company>AURA</Company>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>

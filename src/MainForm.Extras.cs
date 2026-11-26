@@ -35,6 +35,10 @@ namespace Aura
         // ---------- what's new ----------
         public static readonly (string version, string[] changes)[] Notes =
         {
+            ("0.5.1", new[]
+            {
+                "Full screen: clicking a song in Up next plays that song (it used to play the one after it)",
+            }),
             ("0.5.0", new[]
             {
                 "About tab on Now Playing: the artists on the song (featured ones too), credits like producer, writer, label and date from the song's tags and name, its album and era, and how you've listened to it",

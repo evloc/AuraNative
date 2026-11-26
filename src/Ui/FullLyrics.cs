@@ -352,12 +352,12 @@ namespace Aura
         void DrawUpNext(Graphics g, Cosmos.Layout L, int ta)
         {
             var P = shell.Player;
-            var next = new List<Track>();
+            var next = new List<Track>(); var at = new List<int>();
             for (int i = P.Pos; i < P.Order.Count && next.Count < 5; i++)
             {
                 if (i < 0) continue;
                 var tr = shell.Lib.Get(P.Queue[P.Order[i]]);
-                if (tr != null) next.Add(tr);
+                if (tr != null) { next.Add(tr); at.Add(i - P.Pos - 1); }     // JumpTo counts from the song after the one playing
             }
             if (next.Count == 0) return;
             float x = L.UpNext.X, y = L.UpNext.Y;
@@ -387,7 +387,7 @@ namespace Aura
                 Theme.Write(g, tr.Name, Theme.Font(now ? 13.5f : 12.5f, FontStyle.Regular, true), Color.FromArgb(now ? 240 : 205, 255, 255, 255), new RectangleF(tx, r.Y + h * 0.16f, tw, h * 0.38f));
                 Theme.Write(g, tr.ArtistName, Theme.Font(11), Color.FromArgb(120, 255, 255, 255), new RectangleF(tx, r.Y + h * 0.52f, tw, h * 0.32f));
                 g.Restore(st);
-                int k = i;
+                int k = at[i];
                 if (!now) AddHit(id, r, () => { P.JumpTo(k); Poke(); }, "Play " + tr.Name);
                 y += h + L.CardGap;
             }

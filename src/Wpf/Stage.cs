@@ -552,6 +552,7 @@ namespace Aura.Wpf
             var P = shell.Player;
             var ids = new List<long>();
             for (int i = Math.Max(0, P.Pos); i < P.Order.Count && ids.Count < 5; i++) ids.Add(P.Queue[P.Order[i]]);
+            int first = Math.Max(0, P.Pos);
             string key = string.Join(",", ids) + "|" + cw.ToString("0") + "|" + (P.Current?.Fav ?? false);
             if (key == upNextKey) return;
             upNextKey = key;
@@ -583,7 +584,7 @@ namespace Aura.Wpf
                 };
                 if (!now)
                 {
-                    int k = i;
+                    int k = first + i - P.Pos - 1;      // JumpTo counts from the song after the one playing
                     card.Cursor = Cursors.Hand; card.ToolTip = "Play " + tr.Name;
                     var idle = card.Background;
                     card.MouseEnter += (s, e) => card.Background = new LinearGradientBrush(Color.FromArgb(64, 255, 255, 255), Color.FromArgb(30, 255, 255, 255), 90);
