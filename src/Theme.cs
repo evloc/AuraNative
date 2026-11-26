@@ -566,6 +566,14 @@ namespace Aura
                         g.DrawLine(pen, 6.5f, 6.5f, 9, 9); g.DrawLine(pen, 15, 15, 17.5f, 17.5f);
                         g.DrawLine(pen, 17.5f, 6.5f, 15, 9); g.DrawLine(pen, 9, 15, 6.5f, 17.5f);
                         break;
+                    case "bolt":       // performance mode
+                        using (var path = new System.Drawing.Drawing2D.GraphicsPath())
+                        {
+                            path.AddPolygon(new[] { new PointF(13.5f, 2.5f), new PointF(5, 13.5f), new PointF(11.5f, 13.5f), new PointF(10.5f, 21.5f), new PointF(19, 10.5f), new PointF(12.5f, 10.5f) });
+                            if (filled) using (var fb = new SolidBrush(pen.Color)) g.FillPath(fb, path);
+                            g.DrawPath(pen, path);
+                        }
+                        break;
                     case "radio":
                         g.DrawEllipse(pen, 10, 10, 4, 4);
                         g.DrawArc(pen, 6, 6, 12, 12, 200, 140); g.DrawArc(pen, 6, 6, 12, 12, 20, 140);

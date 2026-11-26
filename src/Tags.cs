@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
 
 namespace Aura
@@ -16,6 +17,34 @@ namespace Aura
         public List<(double t, string text)> Synced;           // ID3 SYLT (timed lines)
         public string WordsRaw = "";                           // AURA_WORDS: word timings as enhanced LRC
         public bool HasLyrics => LyricsText.Trim().Length > 0 || (Synced != null && Synced.Count > 0);
+        // who made it (composer, producer, label, studio, the full date…): role → names, in the order found
+        public readonly List<KeyValuePair<string, string>> Credits = new List<KeyValuePair<string, string>>();
+        public string Comment = "", FullDate = "";
+        public void Credit(string role, string value)
+        {
+            value = (value ?? "").Replace("\0", "").Trim();
+            if (value.Length == 0 || value.Length > 300) return;
+            foreach (var kv in Credits) if (kv.Key == role && string.Equals(kv.Value, value, StringComparison.OrdinalIgnoreCase)) return;
+            Credits.Add(new KeyValuePair<string, string>(role, value));
+        }
+        // a tag name (TXXX description, Vorbis field, …) → the role it names, or null
+        public static string RoleOf(string key)
+        {
+            switch ((key ?? "").Trim().ToUpperInvariant().Replace("_", " "))
+            {
+                case "PRODUCER": case "PRODUCERS": case "PRODUCED BY": return "Produced by";
+                case "COMPOSER": case "WRITER": case "SONGWRITER": case "WRITTEN BY": case "LYRICIST": return "Written by";
+                case "ENGINEER": case "RECORDING ENGINEER": case "ENGINEERED BY": return "Engineered by";
+                case "MIXER": case "MIXED BY": case "MIX ENGINEER": case "MIXING ENGINEER": return "Mixed by";
+                case "MASTERED BY": case "MASTERING ENGINEER": return "Mastered by";
+                case "LABEL": case "ORGANIZATION": case "PUBLISHER": case "RECORD LABEL": return "Label";
+                case "RECORDING LOCATION": case "RECORDED AT": case "STUDIO": case "LOCATION": return "Recorded at";
+                case "RECORDING DATE": case "RECORDED": case "RECORDINGDATE": return "Recorded";
+                case "RELEASE DATE": case "RELEASEDATE": case "ORIGINALDATE": return "Released";
+                case "LEAK DATE": case "LEAKED": case "LEAKDATE": return "Leaked";
+                default: return null;
+            }
+        }
     }
 
     // Reads tags, cover and length straight from the file: MP3 (ID3v2/ID3v1), FLAC, Ogg Vorbis/Opus,
@@ -77,6 +106,7 @@ namespace Aura
             v = (v ?? "").Replace("\0", "").Trim();
             if (field.Length == 0 && v.Length > 0) field = v;
         }
+        static string Cap(string s) => s.Length == 0 ? s : char.ToUpperInvariant(s[0]) + s.Substring(1).ToLowerInvariant();
         static void Add(ref string field, string v)
         {
             v = (v ?? "").Replace("\0", "").Trim();
@@ -236,7 +266,24 @@ namespace Aura
                         case "TPE1": case "TP1": Set(ref t.Artist, Id3Text(fb, o, n)); break;
                         case "TALB": case "TAL": Set(ref t.Album, Id3Text(fb, o, n)); break;
                         case "TPE2": case "TP2": Set(ref t.AlbumArtist, Id3Text(fb, o, n)); break;
-                        case "TDRC": case "TYER": case "TYE": case "TDOR": Set(ref t.Year, Id3Text(fb, o, n)); break;
+                        case "TDRC": case "TYER": case "TYE": case "TDOR": { var d = Id3Text(fb, o, n); Set(ref t.Year, d); if (d.Trim().Length > 4 && t.FullDate.Length == 0) t.FullDate = d.Trim(); break; }
+                        case "TCOM": case "TCM": case "TEXT": case "TXT": t.Credit("Written by", Id3Text(fb, o, n)); break;
+                        case "TPUB": case "TPB": t.Credit("Label", Id3Text(fb, o, n)); break;
+                        case "TDRL": t.Credit("Released", Id3Text(fb, o, n)); break;
+                        case "TIPL": case "IPLS": case "IPL": case "TMCL":
+                            {
+                                // pairs: role, name, role, name…
+                                var parts = Decode(fb, o + 1, n - 1, fb[o]).Split('\0').Select(x => x.Trim()).Where(x => x.Length > 0).ToList();
+                                for (int pi = 0; pi + 1 < parts.Count; pi += 2) t.Credit(TagInfo.RoleOf(parts[pi]) ?? Cap(parts[pi]), parts[pi + 1]);
+                                break;
+                            }
+                        case "COMM": case "COM":
+                            {
+                                if (n < 5 || t.Comment.Length > 0) break;
+                                int enc = fb[o], q = SkipZ(fb, o + 4, o + n, enc);
+                                if (q < o + n) t.Comment = Decode(fb, q, o + n - q, enc).Replace("\0", "").Trim();
+                                break;
+                            }
                         case "TCON": case "TCO": Set(ref t.Genre, Id3Text(fb, o, n)); break;
                         case "TRCK": case "TRK": Set(ref t.Track, Id3Text(fb, o, n)); break;
                         case "TLEN":
@@ -279,6 +326,7 @@ namespace Aura
                                 string desc = Decode(fb, o + 1, Math.Max(0, q - (o + 1) - zl), enc).Trim('\0', ' ');
                                 string val = q < o + n ? Decode(fb, q, o + n - q, enc).Trim('\0', ' ') : "";
                                 if (desc.Equals("AURA_WORDS", StringComparison.OrdinalIgnoreCase)) t.WordsRaw = val;
+                                else if (TagInfo.RoleOf(desc) is string role) t.Credit(role, val);
                                 else if ((desc.Equals("LYRICS", StringComparison.OrdinalIgnoreCase) || desc.Equals("UNSYNCEDLYRICS", StringComparison.OrdinalIgnoreCase)) && t.LyricsText.Length == 0) t.LyricsText = val;
                                 break;
                             }
@@ -446,13 +494,15 @@ namespace Aura
                             case "ARTIST": Add(ref t.Artist, val); break;
                             case "ALBUM": Set(ref t.Album, val); break;
                             case "ALBUMARTIST": case "ALBUM ARTIST": Set(ref t.AlbumArtist, val); break;
-                            case "DATE": case "YEAR": Set(ref t.Year, val); break;
+                            case "DATE": case "YEAR": Set(ref t.Year, val); if (val.Trim().Length > 4 && t.FullDate.Length == 0) t.FullDate = val.Trim(); break;
                             case "GENRE": Set(ref t.Genre, val); break;
                             case "TRACKNUMBER": Set(ref t.Track, val); break;
                             case "LYRICS": case "UNSYNCEDLYRICS": case "SYNCEDLYRICS": case "UNSYNCED LYRICS":
                                 if (t.LyricsText.Length == 0 || (key == "SYNCEDLYRICS" && !Lrc.IsTimed(t.LyricsText))) t.LyricsText = val.Trim();
                                 break;
                             case "AURA_WORDS": t.WordsRaw = val.Trim(); break;
+                            case "COMMENT": case "DESCRIPTION": if (t.Comment.Length == 0) t.Comment = val.Trim(); break;
+                            default: if (TagInfo.RoleOf(key) is string role) t.Credit(role, val); break;
                         }
                     }
                 }
@@ -679,6 +729,8 @@ namespace Aura
                                 case "©day": Set(ref t.Year, s); break;
                                 case "©gen": Set(ref t.Genre, s); break;
                                 case "©lyr": if (t.LyricsText.Length == 0) t.LyricsText = s.Trim(); break;
+                                case "©wrt": t.Credit("Written by", s); break;
+                                case "©cmt": case "desc": if (t.Comment.Length == 0) t.Comment = s.Trim(); break;
                             }
                         }
                     }

@@ -47,6 +47,9 @@ namespace Aura
         [DataMember] public string Separate = "transcribe";   // separate the vocals first: "transcribe", "always", "off"
         [DataMember] public string SongLanguage = "en";
         [DataMember] public bool LookOnlineAfterTranscribe = true;
+        [DataMember] public bool Lite;                  // performance mode: no effects, background work paused
+        [DataMember] public string StageLook = "cover";   // full screen: "cover" (the cover's colors, calm) or "space"
+        [DataMember] public string SeenVersion = "";    // the last version whose "what's new" was shown
 
         // settings saved by an older AURA don't have the newer ones: start those at their defaults
         [OnDeserializing]

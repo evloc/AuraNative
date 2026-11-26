@@ -58,7 +58,24 @@
 - **Now Playing and lyrics** — click the cover in the player bar (or the
   microphone, or Ctrl+L). Timed lyrics follow the song and light up word by
   word when the song has word timings; click a line to jump there.
-- **Full-screen lyrics** — deep space: black, with twinkling stars, shooting
+- **About the song** — the About tab on Now Playing shows who's on it (the
+  main artist and anyone featured, from the artist tag and "(feat. …)" in the
+  name), credits (producer from the tags or "(prod. …)" in the name, writer,
+  engineer, label, studio, the full date, the comment, the file), the album and
+  era with their play counts, and how you've listened to it.
+- **Quick search** — Ctrl+K anywhere: songs, artists, albums and lines of
+  lyrics. Picking a line starts the song right where it's sung. Enter plays,
+  Shift+Enter adds to Up next.
+- **Performance mode** — P, Ctrl+P or the lightning button: no glow or moving
+  effects, fewer frames, and the background work (listening, timing lyrics)
+  waits until it's off.
+- **What's new** — the first time a new version opens, a short list of what
+  changed (Settings → Performance → What's new shows it again).
+- **Full-screen lyrics** — two looks (V or the button at the top switches):
+  **Cover** (the default) makes the sky from the cover's colors, puts the
+  cover big on the left with the song's name under it, and keeps the lyrics
+  calm: the line being sung is white with a small glowing dot, the others
+  fade. **Space** is deep space: black, with twinkling stars, shooting
   stars and soft splashes of violet, pink and blue (the same for every song).
   The cover sits big in the middle with a ring that pulses with the music; the
   lyrics are on the right (the current line glows and fills in word by word;
@@ -168,6 +185,9 @@ Not here yet: an equalizer.
 | N or Ctrl+L | Now Playing |
 | K or F11 | full-screen lyrics |
 | M or Ctrl+M | mini player |
+| Ctrl+K | quick search |
+| P or Ctrl+P | performance mode |
+| V (full screen) | switch the full-screen look |
 | Q | Up next |
 | F | favorite the song that's playing |
 | 1–5, 0 | rate it, clear the rating |

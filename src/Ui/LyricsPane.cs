@@ -234,7 +234,7 @@ namespace Aura
                     RectangleF Dest(float sx, float sy, float sw, float sh) =>
                         new RectangleF(ox + (x0 - pad + sx - ox) * scale, oy + (top - pad + sy - oy) * scale, sw * scale, sh * scale);
                     var whole = new RectangleF(0, 0, sp.Width, sp.Height);
-                    if (L.Lit > 0.02f)
+                    if (L.Lit > 0.02f && !App.Lite)
                     {
                         var gl = GlowOf(L);
                         float gm = (int)GlowMargin;

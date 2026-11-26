@@ -252,7 +252,7 @@ namespace Aura
             {
                 var ps = Perf.Last;
                 var parts = ps?.Parts ?? new System.Collections.Generic.List<(string part, double cpu)>();
-                h = Theme.F(150) + Math.Max(1, Math.Min(7, parts.Count)) * Theme.F(26);
+                h = Theme.F(196) + Math.Max(1, Math.Min(7, parts.Count)) * Theme.F(26);
                 x = Card(g, y, h, "Performance", "What AURA is using right now. If it ever seems slow, press Copy report and send it over.");
                 perfCard = new RectangleF(0, y, Width, h);
                 float py = y + Theme.F(84);
@@ -268,7 +268,10 @@ namespace Aura
                     catch { shell.Toast("Couldn't copy the report"); }
                     try { System.IO.File.WriteAllText(System.IO.Path.Combine(App.DataDir, "performance.txt"), rep); } catch { }
                 }, false, null, 32);
+                Pill(g, "whatsnew", x + cw - Theme.F(52) - PillWidth(g, "Copy report") - PillWidth(g, "What's new"), py - Theme.F(4), "What's new", () => mf2?.WhatsNew(), false, null, 32, "What changed in this version");
                 py += Theme.F(34);
+                Toggle(g, "lite", x, py, cw - Theme.F(44), "Performance mode — no effects, fewer frames, background work waits (P)", shell.Prefs.Lite, () => mf2?.TogglePerformance());
+                py += Theme.F(46);
                 if (App.IsWindows)
                     foreach (var (part, cpu) in parts.Take(7))
                     {

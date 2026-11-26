@@ -556,7 +556,7 @@ namespace Aura
             Perf.Here("listening to songs");
             while (!stop)
             {
-                if (Paused) { lock (gate) { Monitor.Wait(gate, 2000); } continue; }
+                if (Paused || App.Lite) { lock (gate) { Monitor.Wait(gate, 2000); } continue; }
                 Track t;
                 try { t = Next(); } catch { t = null; }
                 if (t == null)

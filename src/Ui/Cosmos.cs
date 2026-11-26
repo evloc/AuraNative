@@ -44,6 +44,39 @@ namespace Aura
             return L;
         }
 
+        // The cover look (full screen): the cover big on the left with the song's name under it, the lyrics
+        // on the right; without lyrics, the cover in the middle.
+        public static Layout CoverPlace(float W, float H, bool lyrics)
+        {
+            var L = Place(W, H, lyrics);
+            float textH = H * 0.13f;
+            if (lyrics)
+            {
+                float colX = W * 0.07f, colW = W * 0.34f;
+                L.S = (float)Math.Round(Math.Min(colW * 0.9f, H * 0.5f));
+                float top = Math.Max(H * 0.05f, (L.Bar.Y - (L.S + textH + H * 0.03f)) / 2);
+                L.Cx = colX + L.S / 2; L.Cy = top + L.S / 2;
+                float tw = Math.Max(L.S, colW);
+                L.Title = new RectangleF(colX, top + L.S + H * 0.03f, tw, H * 0.055f);
+                L.Artist = new RectangleF(colX, L.Title.Bottom + H * 0.004f, tw, H * 0.032f);
+                L.Album = new RectangleF(colX, L.Artist.Bottom + H * 0.008f, tw, H * 0.024f);
+                L.Lyrics = new RectangleF(W * 0.47f, H * 0.04f, W * 0.47f, L.Bar.Y - H * 0.06f);
+            }
+            else
+            {
+                L.S = (float)Math.Round(Math.Min(H * 0.44f, W * 0.3f));
+                float top = Math.Max(H * 0.05f, (L.Bar.Y - (L.S + textH + H * 0.03f)) / 2);
+                L.Cx = W / 2; L.Cy = top + L.S / 2;
+                float tw = W * 0.6f;
+                L.Title = new RectangleF(L.Cx - tw / 2, top + L.S + H * 0.03f, tw, H * 0.055f);
+                L.Artist = new RectangleF(L.Cx - tw / 2, L.Title.Bottom + H * 0.004f, tw, H * 0.032f);
+                L.Album = new RectangleF(L.Cx - tw / 2, L.Artist.Bottom + H * 0.008f, tw, H * 0.024f);
+            }
+            L.Cover = new RectangleF(L.Cx - L.S / 2, L.Cy - L.S / 2, L.S, L.S);
+            L.Ring = L.Cover;
+            return L;
+        }
+
         // ---------- the cover's colors ----------
         // three colors from the cover (the strongest hues), for the backdrop and the glowing dots
         public static Color[] Palette(Bitmap cover, Color accent)

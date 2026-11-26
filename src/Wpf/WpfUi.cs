@@ -131,7 +131,7 @@ namespace Aura.Wpf
             double now = clock.Elapsed.TotalSeconds;
             // 60 frames a second is plenty for lyrics beside the cover; on a 144 or 240 Hz screen the rest are skipped
             // (when nothing changes WPF draws nothing, so skipped frames cost the graphics card nothing)
-            if (now - last < 1 / 62.0) return;
+            if (now - last < (App.Lite ? 1 / 31.0 : 1 / 62.0)) return;
             double dt = Math.Max(0.001, Math.Min(0.1, now - last));
             last = now;
             try { View.Step(Position?.Invoke() ?? 0, dt); }

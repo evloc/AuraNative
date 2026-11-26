@@ -195,6 +195,8 @@ namespace Aura
             switch (key)
             {
                 case Keys.Control | Keys.F: Head.Search.Focus(); Head.Search.SelectAll(); return true;
+                case Keys.Control | Keys.K: QuickFind(); return true;
+                case Keys.Control | Keys.P: TogglePerformance(); return true;
                 case Keys.Control | Keys.Right: Player.Next(); return true;
                 case Keys.Control | Keys.Left: Player.Prev(); return true;
                 case Keys.Control | Keys.Up: Player.Volume += 5; Bar.Invalidate(); return true;
@@ -732,7 +734,9 @@ namespace Aura
             if (Prefs.Folders.Count > 0) Rescan();
             else { firstScan = false; AfterFirstScan(); }
             Lyrics.StartAuto(() => Prefs.AutoLyrics);
+            ApplyPerformance();
             StartMore();
+            MaybeWhatsNew();
             if (CrashGuard.LastTime != null)
             {
                 var later = new Timer { Interval = 2500 };

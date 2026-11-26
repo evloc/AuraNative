@@ -60,6 +60,9 @@ namespace Aura
             IconButton(g, "mini", new RectangleF(rx - Theme.F(160), h / 2 - Theme.F(16), Theme.F(32), Theme.F(32)), "mini", shell.ToggleMini, "Mini player — stays on top (M)");
             var sleepR = new RectangleF(rx - Theme.F(200), h / 2 - Theme.F(16), Theme.F(32), Theme.F(32));
             IconButton(g, "sleep", sleepR, "moon", () => (shell as MainForm)?.SleepMenu(PointToScreen(Point.Round(new PointF(sleepR.X, sleepR.Y - Theme.F(4))))), P.Sleeping ? "Sleep timer: stops " + (P.SleepAfterSong ? "after this song" : "in " + P.SleepText) : "Sleep timer", P.Sleeping, filled: P.Sleeping);
+            var mfp = shell as MainForm;
+            IconButton(g, "lite", new RectangleF(rx - Theme.F(240), h / 2 - Theme.F(16), Theme.F(32), Theme.F(32)), "bolt", () => mfp?.TogglePerformance(),
+                App.Lite ? "Performance mode is on — effects off, background work waiting (P)" : "Performance mode — turns the effects off so AURA barely uses your PC (P)", App.Lite, filled: App.Lite);
             IconButton(g, "lyrics", new RectangleF(rx - Theme.F(120), h / 2 - Theme.F(16), Theme.F(32), Theme.F(32)), "mic",
                 () => { if (shell.Current?.Kind == "now") shell.Back(); else shell.Go(new Route("now")); }, "Lyrics (Ctrl+L)", shell.Current?.Kind == "now");
             IconButton(g, "queue", new RectangleF(rx - Theme.F(80), h / 2 - Theme.F(16), Theme.F(32), Theme.F(32)), "queue",
@@ -68,7 +71,7 @@ namespace Aura
             // ---- middle: buttons and seek bar
             float cx = Width / 2f;
             float midW = Math.Min(Theme.F(620), Width - leftW * 2 - Theme.F(40));
-            midW = Math.Max(Theme.F(260), Math.Min(midW, (rx - Theme.F(210)) - (x + leftW) - Theme.F(24)));
+            midW = Math.Max(Theme.F(260), Math.Min(midW, (rx - Theme.F(250)) - (x + leftW) - Theme.F(24)));
             cx = Math.Max(cx, x + leftW + Theme.F(12) + midW / 2);
             float by = Theme.F(12), bs = Theme.F(34);
             PlayButton(g, "play", new RectangleF(cx - Theme.F(20), by - Theme.F(2), Theme.F(40), Theme.F(40)), P.IsPlaying, P.Toggle, P.IsPlaying ? "Pause (Space)" : "Play (Space)");

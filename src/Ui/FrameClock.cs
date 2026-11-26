@@ -41,7 +41,7 @@ namespace Aura
             if (!on) { timer.Interval = 250; return; }
             // keep the window responsive: if drawing is slow, ask for fewer frames
             double cost = (target as Canvas)?.PaintMs ?? 0;
-            timer.Interval = (int)Math.Max(15, Math.Min(66, cost * 1.6));
+            timer.Interval = (int)Math.Max(App.Lite ? 33 : 15, Math.Min(66, cost * 1.6));
             Frame?.Invoke();
             target.Invalidate();
         }

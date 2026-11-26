@@ -967,6 +967,7 @@ namespace Aura
         }
 
         // ratings, eras, search, undo, bookmarks, sleep, crossfade, radio, speed, trackers, folders, versions, looks
+        static Track aboutTrack;
         static void MoreScript()
         {
             MainForm.UiTestMode = true;
@@ -1235,6 +1236,96 @@ namespace Aura
             Step("light", () => { if (!Pause(6)) return false; Ok(Theme.IsLight && Theme.Bg.GetBrightness() > 0.9f, "the light theme"); Shot("90_light_songs"); F.Go(new Route("now")); return true; });
             Step("light now", () => { if (!Pause(6)) return false; Shot("91_light_now"); F.ApplyTheme("Midnight"); return true; });
             Step("dark again", () => { if (!Pause(3)) return false; Ok(!Theme.IsLight, "and back"); return true; });
+            // ---- the About tab under Now Playing: credits from tags and names
+            Step("credits read", () =>
+            {
+                var tg = Tags.Read("/tmp/claude-0/n8/credits.mp3");
+                string C(string role) => string.Join(", ", tg.Credits.Where(c => c.Key == role).Select(c => c.Value));
+                Ok(C("Written by") == "Jarad Higgins" && C("Produced by") == "J Knight" && C("Label") == "Grade A" && C("Engineered by") == "Pedro Ramirez",
+                    "credits are read from the tags: " + string.Join("; ", tg.Credits.Select(c => c.Key + "=" + c.Value)));
+                Ok(tg.FullDate == "2016-01-19" && tg.Comment == "Recorded at Enviyon", "the full date and the comment too (" + tg.FullDate + ", " + tg.Comment + ")");
+                aboutTrack = new Track { Id = 987654, Path = "/tmp/claude-0/n8/credits.mp3", Title = "2MININHELL (feat. Lil Bibby) [Prod. Nick Mira & DT]", Artist = "Juice WRLD, Other Guy", Year = "2016", Size = 4000000, Duration = 200 };
+                SongAbout.Get(aboutTrack, L, null);
+                return true;
+            });
+            Step("credits about", () =>
+            {
+                var a = SongAbout.Get(aboutTrack, L, null);
+                if (a == null) return false;
+                string C(string role) => string.Join(", ", a.Credits.Where(c => c.Key == role).Select(c => c.Value));
+                var names = string.Join(", ", a.Artists.Select(x => x.Name + " (" + x.Role + ")"));
+                Ok(a.Artists.Count == 3 && a.Artists[0].Name == "Juice WRLD" && a.Artists[0].Role == "Main artist" && a.Artists.Any(x => x.Name == "Lil Bibby" && x.Role == "Featured artist") && a.Artists.Any(x => x.Name == "Other Guy"),
+                    "artists: the main one, plus featured ones from the tag and the name (" + names + ")");
+                Ok(C("Produced by") == "Nick Mira, DT, J Knight", "producers from the song's name and its tags (" + C("Produced by") + ")");
+                Ok(C("Date") == "January 19, 2016" && C("Written by") == "Jarad Higgins" && C("Comment") == "Recorded at Enviyon" && C("File").StartsWith("MP3"), "and the date, writer, comment and file (" + string.Join("; ", a.Credits.Select(c => c.Key + "=" + c.Value)) + ")");
+                P.PlayList(new[] { N("b.wav").Id }.ToList());
+                F.Go(new Route("now"));
+                NowPlayingPage.ShowAbout = true;
+                return true;
+            });
+            Step("about shot", () => { if (!Pause(10)) return false; Shot("92_now_about"); NowPlayingPage.ShowAbout = false; return true; });
+            // ---- Ctrl+K quick search
+            Step("quick open", () =>
+            {
+                L.IndexLyrics(N("b.wav"), "night drive sidecar line\nsecond sidecar line");
+                F.QuickFind();
+                return true;
+            });
+            Step("quick type", () => { if (!Pause(3)) return false; Ok(QuickSearch.Open != null && QuickSearch.Open.Visible, "Ctrl+K opens quick search"); QuickSearch.Open.TestType("second sidecar"); return true; });
+            Step("quick results", () =>
+            {
+                if (!Pause(4)) return false;
+                var k = QuickSearch.Open.TestKinds;
+                Ok(k.Any(x => x.StartsWith("line:“second sidecar line”") && x.Contains("0:05")), "a line of lyrics is found, with when it's sung (" + string.Join(" / ", k) + ")");
+                ShotForm(QuickSearch.Open, "93_quick_search_lyrics");
+                QuickSearch.Open.TestType("lucid");
+                return true;
+            });
+            Step("quick songs", () =>
+            {
+                if (!Pause(4)) return false;
+                var k = QuickSearch.Open.TestKinds;
+                Ok(k.Count > 0 && k[0].StartsWith("song:Lucid Dreams"), "songs come first (" + string.Join(" / ", k.Take(4)) + ")");
+                ShotForm(QuickSearch.Open, "94_quick_search_songs");
+                QuickSearch.Open.TestType("second sidecar");
+                return true;
+            });
+            Step("quick pick", () =>
+            {
+                if (!Pause(4)) return false;
+                int i = QuickSearch.Open.TestKinds.FindIndex(x => x.StartsWith("line:"));
+                for (int j = 0; j < i; j++) QuickSearch.Open.View.Step(1);
+                QuickSearch.Open.View.Pick(false);
+                return true;
+            });
+            Step("quick picked", () =>
+            {
+                if (!Pause(6)) return false;
+                Ok(QuickSearch.Open == null, "picking closes it");
+                Ok(P.Current == N("b.wav") && P.Position >= 4.5 && P.Position < 9, "picking a line plays the song from that line (" + P.Position.ToString("0.0") + " s)");
+                return true;
+            });
+            // ---- performance mode
+            Step("lite on", () => { F.TogglePerformance(); return true; });
+            Step("lite shot", () =>
+            {
+                if (!Pause(5)) return false;
+                Ok(App.Lite && F.Prefs.Lite, "P turns performance mode on");
+                Shot("95_performance_mode");
+                F.TogglePerformance();
+                return true;
+            });
+            Step("lite off", () => { if (!Pause(2)) return false; Ok(!App.Lite, "and off again"); return true; });
+            // ---- what's new
+            WhatsNewForm wn = null;
+            Step("whats new", () =>
+            {
+                Ok(MainForm.Notes[0].version == App.Version, "the newest notes are for this version (" + MainForm.Notes[0].version + " / " + App.Version + ")");
+                Ok(F.Prefs.SeenVersion == App.Version, "and it remembers they were seen");
+                wn = new WhatsNewForm(MainForm.Notes.Take(2).ToList()); wn.Show(F);
+                return true;
+            });
+            Step("whats new shot", () => { if (!Pause(4)) return false; ShotForm(wn, "96_whats_new"); wn.Close(); return true; });
         }
 
         static void Resume()

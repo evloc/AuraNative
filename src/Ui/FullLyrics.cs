@@ -471,7 +471,7 @@ namespace Aura
         public static StageSong Make(Track t, Bitmap small, int coverPx, int skyW, int skyH, Action<StageSong> done, Control ui)
             => Make(t, small, coverPx, skyW, skyH, done, a => { if (!ui.IsDisposed) ui.BeginInvoke(a); });
 
-        public static StageSong Make(Track t, Bitmap small, int coverPx, int skyW, int skyH, Action<StageSong> done, Action<Action> post)
+        public static StageSong Make(Track t, Bitmap small, int coverPx, int skyW, int skyH, Action<StageSong> done, Action<Action> post, bool fromCover = false)
         {
             var s = new StageSong { T = t };
             Bitmap copy = null;
@@ -485,6 +485,12 @@ namespace Aura
                     s.Cover = Art.LoadBig(t, coverPx) ?? copy;
                     if (s.Cover != copy) copy?.Dispose();
                     s.Pal = Cosmos.SpacePal;
+                    // the cover look: the sky and the colors come from the cover
+                    if (fromCover)
+                    {
+                        s.Pal = Cosmos.Palette(s.Cover, accent);
+                        s.Sky = Cosmos.Backdrop(s.Cover, s.Pal, skyW, skyH);
+                    }
                 }
                 catch (Exception e) { App.Log("full screen song: " + e.Message); s.Pal = Cosmos.SpacePal; }
                 try { post(() => done(s)); } catch { }

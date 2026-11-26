@@ -55,6 +55,7 @@ namespace Aura
                 case Keys.B: if (t != null) { Lib.AddBookmark(t, Player.Position); Toast("Bookmarked " + Theme.Time(Player.Position) + " in " + t.Name); Page?.Invalidate(); } return true;
                 case Keys.K: FullScreenLyrics(); return true;
                 case Keys.M: ToggleMini(); return true;
+                case Keys.P: TogglePerformance(); return true;
                 case Keys.N: if (Current?.Kind == "now") Back(); else Go(new Route("now")); return true;
                 case Keys.Q: if (Current?.Kind == "queue") Back(); else Go(new Route("queue")); return true;
                 case Keys.F: if (t != null) { Lib.SetFav(t, !t.Fav); Toast(t.Fav ? "Added to Favorites" : "Removed from Favorites"); } return true;

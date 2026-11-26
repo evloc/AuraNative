@@ -127,7 +127,7 @@ namespace Aura
                             catch (Exception e) { if (autoSyncStop) break; Say("Couldn't download the small speech model (" + e.Message + "). Trying again in a while."); Thread.Sleep(300000); continue; }
                         }
                         if (!Whisper.Load()) { Say("Not available: " + Whisper.LoadError + "."); return; }
-                        if (TranscribeOpen || FullScreenOpen) { Thread.Sleep(5000); continue; }
+                        if (TranscribeOpen || FullScreenOpen || App.Lite) { if (App.Lite) Say("Waiting: performance mode is on"); Thread.Sleep(5000); continue; }
                         if (todo.Count == 0 && (DateTime.Now - listed).TotalMinutes > 30)
                         {
                             listed = DateTime.Now;

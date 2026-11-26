@@ -18,6 +18,7 @@ namespace Aura
             }
         }
 
+        public static volatile bool Lite;      // performance mode: no effects, fewer frames, background work waits
         public static string DataArg;      // the --data folder AURA was started with (passed on to its helper)
         public static void Init(string dataOverride)
         {

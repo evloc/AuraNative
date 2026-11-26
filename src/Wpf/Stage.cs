@@ -67,7 +67,12 @@ namespace Aura.Wpf
         DateTime lastMove = DateTime.Now;
         Track shown;
         StageSong song, loading;
-        readonly Color[] pal = Cosmos.SpacePal.Select(LyricsView.C).ToArray();       // deep space: the same colors for every song
+        static readonly Color[] spacePal = Cosmos.SpacePal.Select(LyricsView.C).ToArray();       // deep space: the same colors for every song
+        Color[] pal = spacePal;                 // the cover look: the cover's own colors
+        bool CoverLook => shell.Prefs.StageLook != "space";
+        int lookGen;
+        readonly Border lookBtn;
+        readonly TextBlock lookGlyph = new TextBlock();
         static BitmapSource spaceSky;
         Point lastMouse;
         bool dragSeek, dragVol;
@@ -134,6 +139,8 @@ namespace Aura.Wpf
 
             closeBtn = Round("", 44, Close, "Close (Esc)");
             root.Children.Add(closeBtn);
+            lookBtn = Round("\uE790", 44, ToggleLook, "Switch the look: the cover's colors, or space (V)", lookGlyph);
+            root.Children.Add(lookBtn);
             flash.Fill = flashBrush;
             root.Children.Add(flash);
             root.Children.Add(intro);
@@ -260,6 +267,7 @@ namespace Aura.Wpf
                 case Key.Down: P.Volume -= 5; break;
                 case Key.N: P.Next(); break;
                 case Key.P: P.Prev(); break;
+                case Key.V: ToggleLook(); break;
                 default: return;
             }
             Poke();
@@ -267,6 +275,18 @@ namespace Aura.Wpf
         }
 
         void Poke() { lastMove = DateTime.Now; Mouse.OverrideCursor = null; }
+
+        // the cover look (the sky and colors from the cover, calm lyrics) or deep space
+        void ToggleLook()
+        {
+            shell.Prefs.StageLook = CoverLook ? "space" : "cover";
+            try { shell.Prefs.Save(); } catch { }
+            lookGen++;
+            song?.Dispose(); song = null; loading = null; askedFor = null;
+            pal = spacePal;
+            if (!CoverLook) { skyB.Source = spaceSky; skyB.Opacity = 0; skyFade = 0; }
+            shown = null;
+        }
 
         static double Ease(double dt, double speed) => 1 - Math.Exp(-dt * speed);
 
@@ -322,19 +342,25 @@ namespace Aura.Wpf
             if (small == null && !Art.Missing(t) && (DateTime.Now - askedAt).TotalSeconds < 1.5) return;
             double dpi = ScreenDpi() / 96.0;
             int coverPx = (int)Math.Max(320, Math.Min(1200, ActualHeight * 0.3 * dpi));
+            int gen = lookGen;
             loading = StageSong.Make(t, small, coverPx, 480, 270, s =>
             {
                 if (loading == s) loading = null;
-                if (!IsLoaded || shell.Player.Current != s.T) { s.Dispose(); return; }
+                if (!IsLoaded || shell.Player.Current != s.T || gen != lookGen) { s.Dispose(); return; }
                 var old = song; song = s; old?.Dispose();
                 cover.Source = ToSource(s.Cover) ?? Thumb(t);
-            }, a => Dispatcher.BeginInvoke(a));
+                if (CoverLook && s.Sky != null)
+                {
+                    skyB.Source = ToSource(s.Sky); skyB.Opacity = 0; skyFade = 0;
+                    pal = s.Pal.Select(LyricsView.C).ToArray();
+                }
+            }, a => Dispatcher.BeginInvoke(a), CoverLook);
         }
 
         void Frame(object sender, EventArgs e)
         {
             double now = clock.Elapsed.TotalSeconds;
-            if (now - last < 1 / 121.0) return;          // up to 120 frames a second; more only costs power
+            if (now - last < (App.Lite ? 1 / 31.0 : 1 / 121.0)) return;          // up to 120 frames a second (30 in performance mode); more only costs power
             var sw = System.Diagnostics.Stopwatch.StartNew();
             double dt = Math.Max(0.001, Math.Min(0.1, now - last));
             last = now;
@@ -362,9 +388,19 @@ namespace Aura.Wpf
                 {
                     shell.Sound.Want(t);
                     title.Text = t.Name;
-                    artist.Text = string.Join(" ", t.ArtistName.ToUpperInvariant().ToCharArray());
                     var al = t.Album; if (t.Era.Length > 0 && t.Era != t.Album) al += (al.Length > 0 ? "  ·  " : "") + t.Era;
-                    album.Text = al;
+                    if (CoverLook)
+                    {
+                        artist.Text = t.ArtistName;
+                        album.Text = string.Join(" ", al.ToUpperInvariant().ToCharArray());
+                        title.FontWeight = FontWeights.ExtraBold;
+                    }
+                    else
+                    {
+                        artist.Text = string.Join(" ", t.ArtistName.ToUpperInvariant().ToCharArray());
+                        album.Text = al;
+                        title.FontWeight = FontWeights.Bold;
+                    }
                     barTitle.Text = t.Name; barArtist.Text = t.ArtistName;
                     if (song?.T != t) cover.Source = Thumb(t);       // the small one until the big one is ready
                 }
@@ -385,13 +421,15 @@ namespace Aura.Wpf
             bool has = t != null && lyrics.Lyrics != null;
             side += ((has ? 1 : 0) - side) * Ease(dt, 4);
             if (Math.Abs(side - (has ? 1 : 0)) < 0.002) side = has ? 1 : 0;      // settle exactly, so nothing keeps moving by tiny amounts
-            var L0 = Cosmos.Place((float)W, (float)H, false); var L1 = Cosmos.Place((float)W, (float)H, true);
+            bool look = CoverLook, lite = App.Lite;
+            var L0 = look ? Cosmos.CoverPlace((float)W, (float)H, false) : Cosmos.Place((float)W, (float)H, false);
+            var L1 = look ? Cosmos.CoverPlace((float)W, (float)H, true) : Cosmos.Place((float)W, (float)H, true);
             double cx = L0.Cx + (L1.Cx - L0.Cx) * side, cy = L0.Cy + (L1.Cy - L0.Cy) * side, S = L0.S + (L1.S - L0.S) * side;
             var c0 = pal[0];
 
             // the sky drifts like a floating camera; a new one fades in
             Put(skyA, new RectangleF(0, 0, W, H)); Put(skyB, new RectangleF(0, 0, W, H));
-            skyMove.X = Math.Sin(now * 0.031) * W * 0.012; skyMove.Y = Math.Cos(now * 0.023) * H * 0.01;
+            if (lite) { skyMove.X = skyMove.Y = 0; } else { skyMove.X = Math.Sin(now * 0.031) * W * 0.012; skyMove.Y = Math.Cos(now * 0.023) * H * 0.01; }
             if (skyFade < 1)
             {
                 skyFade = Math.Min(1, skyFade + dt / 1.2);
@@ -399,16 +437,19 @@ namespace Aura.Wpf
                 if (skyFade >= 1) { skyA.Source = skyB.Source; skyA.Opacity = 1; skyB.Opacity = 0; skyB.Source = null; }
             }
             flash.Width = W; flash.Height = H; intro.Width = W; intro.Height = H;
-            flash.Opacity = cosmos.Peak * cosmos.Peak * 0.35;
+            flash.Opacity = look || lite ? 0 : cosmos.Peak * cosmos.Peak * 0.35;
             if (flash.Opacity > 0.005) flashBrush.Color = LyricsView.C(Theme.Mix(DColor.FromArgb(c0.R, c0.G, c0.B), DColor.White, 0.6f));
 
             // streaks and dots
-            Put(scene, new RectangleF(0, 0, W, H));
-            scene.Update(cosmos, cx, cy, pal);
+            var sceneVis = look || lite ? Visibility.Collapsed : Visibility.Visible;
+            if (scene.Visibility != sceneVis) scene.Visibility = sceneVis;
+            if (sceneVis == Visibility.Visible) { Put(scene, new RectangleF(0, 0, W, H)); scene.Update(cosmos, cx, cy, pal); }
 
             if (t == null) { foreach (var el in new UIElement[] { glow, ring, ringHalo1, ringHalo2, coverShadow, coverBox, date, clockText, title, artist, album, hint, lyrics, upNext, bar }) el.Visibility = Visibility.Hidden; return; }
             foreach (var el in new UIElement[] { glow, ring, ringHalo1, ringHalo2, coverShadow, coverBox, title, artist, album, upNext, bar }) el.Visibility = Visibility.Visible;
             date.Visibility = clockText.Visibility = Visibility.Collapsed;
+            if (look || lite) { ring.Visibility = ringHalo1.Visibility = ringHalo2.Visibility = Visibility.Hidden; }
+            if (look) upNext.Visibility = Visibility.Hidden;
 
             // glow, ring and cover
             double gs = S * 2.6 * (1 + cosmos.Energy * 0.12);
@@ -417,6 +458,13 @@ namespace Aura.Wpf
             glowBrush.GradientStops[1].Color = Color.FromArgb(80, c0.R, c0.G, c0.B);
             glowBrush.GradientStops[2].Color = Color.FromArgb(0, c0.R, c0.G, c0.B);
             glow.Opacity = Math.Min(1, 0.22 + cosmos.Energy * 0.3 + cosmos.Kick * 0.25 + cosmos.Peak * 0.3);
+            if (look || lite)
+            {
+                // a steady soft glow of the cover's color behind it
+                gs = S * (look ? 1.9 : 2.4);
+                Put(glow, new RectangleF(cx - gs / 2, cy - gs / 2, gs, gs));
+                glow.Opacity = look ? 0.32 * songFade : 0.25;
+            }
             double rs = S * 1.34 * (1 + cosmos.Kick * 0.04);
             Put(ring, new RectangleF(cx - rs / 2, cy - rs / 2, rs, rs));
             Put(ringHalo1, new RectangleF(cx - rs / 2 - 3, cy - rs / 2 - 3, rs + 6, rs + 6));
@@ -438,12 +486,16 @@ namespace Aura.Wpf
             if (cover.Source == null) coverBox.Background = new SolidColorBrush(Color.FromArgb(60, c0.R, c0.G, c0.B));
             else if (coverBox.Background != null) coverBox.Background = null;
             double pulse = 1 + cosmos.Energy * 0.02 + cosmos.Kick * 0.015;
+            if (lite) pulse = 1;
+            else if (look) pulse = (0.94 + 0.06 * songFade) * (1 + (P.IsPlaying ? 0.012 * Math.Sin(now * 2 * Math.PI / 5) : 0));     // pops in, then breathes slowly
             coverScale.ScaleX = coverScale.ScaleY = pulse;
 
             // the song's name
-            var tr = R(L0.Title, L1.Title, side); Put(title, tr); title.FontSize = tr.Height * 0.6;
-            var ar = R(L0.Artist, L1.Artist, side); Put(artist, ar); artist.FontSize = Math.Max(11, ar.Height * 0.46);
-            var alr = R(L0.Album, L1.Album, side); Put(album, alr); album.FontSize = Math.Max(10.5, alr.Height * 0.5);
+            var tr = R(L0.Title, L1.Title, side); Put(title, tr); title.FontSize = tr.Height * (look ? 0.64 : 0.6);
+            var ar = R(L0.Artist, L1.Artist, side); Put(artist, ar); artist.FontSize = Math.Max(11, ar.Height * (look ? 0.56 : 0.46));
+            var alr = R(L0.Album, L1.Album, side); Put(album, alr); album.FontSize = Math.Max(10.5, alr.Height * (look ? 0.46 : 0.5));
+            var align = look && side > 0.5 ? TextAlignment.Left : TextAlignment.Center;
+            if (title.TextAlignment != align) title.TextAlignment = artist.TextAlignment = album.TextAlignment = align;
             title.Opacity = artist.Opacity = album.Opacity = songFade;
             hint.Visibility = has || side > 0.5 ? Visibility.Hidden : Visibility.Visible;
             Put(hint, new RectangleF(alr.X, alr.Y + alr.Height + 6, alr.Width, 22)); hint.Opacity = songFade * (1 - side);
@@ -453,7 +505,8 @@ namespace Aura.Wpf
             if (has)
             {
                 Put(lyrics, R(L1.Lyrics, L1.Lyrics, 0));
-                lyrics.Glow = LyricsView.C(Theme.Mix(DColor.FromArgb(c0.R, c0.G, c0.B), DColor.White, 0.5f));
+                lyrics.Calm = look;
+                lyrics.Glow = LyricsView.C(Theme.Mix(DColor.FromArgb(c0.R, c0.G, c0.B), DColor.White, look ? 0.3f : 0.5f));
                 lyrics.Duration = P.Duration;
                 lyrics.Fade = songFade * side;
                 lyrics.Step(pos, dt);
@@ -462,7 +515,7 @@ namespace Aura.Wpf
             // up next
             var un = R(L0.UpNext, L1.UpNext, side);
             WCanvas.SetLeft(upNext, un.X); WCanvas.SetTop(upNext, un.Y);
-            UpdateUpNext(L1.CardW, L1.CardH, L1.CardGap);
+            if (!look) UpdateUpNext(L1.CardW, L1.CardH, L1.CardGap);
 
             // the bar (slides down when the mouse rests), and close
             var br = L1.Bar;
@@ -472,6 +525,9 @@ namespace Aura.Wpf
             bar.IsHitTestVisible = ui > 0.3;
             WCanvas.SetLeft(closeBtn, W - 88); WCanvas.SetTop(closeBtn, 30);
             closeBtn.Opacity = ui; closeBtn.IsHitTestVisible = ui > 0.3;
+            WCanvas.SetLeft(lookBtn, W - 144); WCanvas.SetTop(lookBtn, 30);
+            lookBtn.Opacity = ui; lookBtn.IsHitTestVisible = ui > 0.3;
+            Brush lb = look ? accentBrush : Brushes.White; if (lookGlyph.Foreground != lb) lookGlyph.Foreground = lb;
             playGlyph.Text = P.IsPlaying ? "" : "";
             favGlyph.Text = t.Fav ? "" : "";
             Brush want = t.Fav ? accentBrush : Brushes.White; if (favGlyph.Foreground != want) favGlyph.Foreground = want;
